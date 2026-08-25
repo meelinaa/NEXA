@@ -118,9 +118,25 @@ public class HandTracker : IDisposable
             return "Spock";
         }
 
-        // B. Open Palm (Alle 5 Finger gestreckt)
-        if (indexExt && middleExt && ringExt && pinkyExt && (thumbStretchedOut || thumbToKnuckle5 > palmSize * 0.45))
+        // B. Offene Hand: Hand Up vs Hand Down
+        // Hand Up: Alle Finger gestreckt und zeigen nach oben (Spitzen weit über dem Handgelenk)
+        // Hand Down: Hand nach unten gekippt/abgewinkelt (Fingerspitzen zeigen nach unten/unter die Knöchel)
+        bool allFingersExtended = indexExt && middleExt && ringExt && pinkyExt;
+        if (allFingersExtended || (indexExt && middleExt && ringExt))
         {
+            // Vektor von Handgelenk (0) zu Mittelfingerspitze (12)
+            bool fingersPointingUp = lm[12].Y < (lm[0].Y - palmSize * 0.5) && lm[12].Y < lm[9].Y;
+            bool fingersPointingDown = lm[12].Y > lm[9].Y || lm[8].Y > lm[5].Y || lm[12].Y > (lm[0].Y - palmSize * 0.2);
+
+            if (fingersPointingUp)
+            {
+                return "Hand Up";
+            }
+            if (fingersPointingDown)
+            {
+                return "Hand Down";
+            }
+
             return "Open Palm";
         }
 

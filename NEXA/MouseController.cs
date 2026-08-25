@@ -71,6 +71,9 @@ public class MouseController
     // Visual click effect animation
     public Point2f LastClickPosition { get; private set; }
 
+    // Pointer tracking timestamp
+    public DateTime LastPointerActiveTime { get; private set; } = DateTime.MinValue;
+
     public MouseController()
     {
         ScreenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -93,6 +96,7 @@ public class MouseController
         // Mauszeiger NUR bei Pointing bewegen
         if (currentGesture == "Pointing")
         {
+            LastPointerActiveTime = DateTime.Now;
             var (targetX, targetY) = MapToScreen(indexTip.X, indexTip.Y, frameWidth, frameHeight);
 
             // 1. Ultra-Smooth Filtering mit dynamischer Glättung
