@@ -1,9 +1,6 @@
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using NEXA;
+using NEXA.Object;
 using OpenCvSharp;
+using System.Diagnostics;
 
 Console.WriteLine("==================================================");
 Console.WriteLine("  N.E.X.A. - MediaPipe Hand Tracking (ONNX + OpenCV)");

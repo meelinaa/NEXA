@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
 using OpenCvSharp;
 
-namespace NEXA;
+namespace NEXA.Hand;
 
 public class HandMeshRenderer
 {

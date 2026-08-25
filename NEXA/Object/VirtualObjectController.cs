@@ -1,26 +1,9 @@
 using System;
 using System.Diagnostics;
+using NEXA.Hand;
 using OpenCvSharp;
 
-namespace NEXA;
-
-public class TestObject
-{
-    public double X { get; set; } = 950;
-    public double Y { get; set; } = 480;
-    public int BaseWidth { get; set; } = 180;
-    public int BaseHeight { get; set; } = 120;
-}
-
-public class GrabState
-{
-    public bool Active { get; set; } = false;
-    public double HoldDurationSeconds { get; set; } = 0.0;
-    public double RequiredHoldTime { get; set; } = 2.0; // 2 Sekunden Haltezeit
-    public (double X, double Y) HandOffsetToObject { get; set; }
-    public Point2f LastPalmCenter { get; set; }
-    public readonly Stopwatch FistTimer = new();
-}
+namespace NEXA.Object;
 
 public class VirtualObjectController
 {
