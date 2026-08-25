@@ -30,7 +30,7 @@ if (!File.Exists(palmModelPath) || !File.Exists(landmarkModelPath))
 Console.WriteLine("Loading MediaPipe ONNX Models...");
 using var tracker = new HandTracker(palmModelPath, landmarkModelPath);
 var renderer = new HandMeshRenderer();
-var zoomController = new ZoomController();
+var virtualObject = new VirtualObjectController();
 
 if (args.Length > 0 && args[0] == "--test")
 {
@@ -38,8 +38,8 @@ if (args.Length > 0 && args[0] == "--test")
     using var testFrame = new Mat(720, 1280, MatType.CV_8UC3, new Scalar(30, 30, 30));
     var results = tracker.ProcessFrame(testFrame);
     renderer.Render(testFrame, results);
-    zoomController.Update(results.FirstOrDefault());
-    zoomController.RenderVirtualTarget(testFrame);
+    virtualObject.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
+    virtualObject.Render(testFrame);
     Console.WriteLine($"[PASS] Pipeline executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -69,7 +69,7 @@ Console.WriteLine("  [ESC] / [Q] : Beenden");
 Console.WriteLine("  [S]         : Glättung Umschalten (Smooth vs Frame-Direct)");
 Console.WriteLine("  [J]         : Gelenkpunkte (Joints) Umschalten");
 Console.WriteLine("  [B]         : Bounding-Box & Gesten-Tag Umschalten");
-Console.WriteLine("  [R]         : Zoom auf 1.0x zurücksetzen");
+Console.WriteLine("  [R]         : Virtuelles Objekt zurücksetzen (Pos & Zoom)");
 Console.WriteLine("  [H]         : HUD-Overlay Umschalten\n");
 
 int frameCount = 0;
@@ -94,15 +94,15 @@ while (true)
     // 1. Process Hand Tracking
     var trackedHands = tracker.ProcessFrame(frame);
 
-    // 2. Process Relative Pinch Zoom
+    // 2. Process Relative Grab & Zoom on Virtual Object
     var primaryHand = trackedHands.FirstOrDefault();
-    zoomController.Update(primaryHand);
+    virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
     // 3. Render Hand Skeleton Bones
     renderer.Render(frame, trackedHands);
 
-    // 4. Render Virtual Test Zoom Target
-    zoomController.RenderVirtualTarget(frame);
+    // 4. Render Virtual Test Target (Grab & Zoom Object)
+    virtualObject.Render(frame);
 
     // 5. FPS calculation
     frameCount++;
@@ -116,7 +116,7 @@ while (true)
     // 6. Render HUD
     if (showHud)
     {
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, zoomController.State);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject);
     }
 
     // 7. Display Frame
@@ -142,7 +142,7 @@ while (true)
     }
     else if (key == 'r' || key == 'R')
     {
-        zoomController.Reset();
+        virtualObject.Reset(frame.Width, frame.Height);
     }
     else if (key == 'h' || key == 'H')
     {
@@ -152,9 +152,9 @@ while (true)
 
 Console.WriteLine("Shutting down NEXA Hand Tracking...");
 
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, ZoomState zoomState)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl)
 {
-    var hudRect = new Rect(10, 10, 320, 80);
+    var hudRect = new Rect(10, 10, 340, 85);
     using var overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
@@ -164,13 +164,28 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, ZoomSt
         HersheyFonts.HersheySimplex, 0.52, new Scalar(0, 255, 255), 1, LineTypes.AntiAlias);
 
     Cv2.PutText(frame, $"FPS: {fps:F1} | Hands: {handsCount} | Filter: {(smoothed ? "ON" : "OFF")}", new Point(20, 50),
-        HersheyFonts.HersheySimplex, 0.42, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
+        HersheyFonts.HersheySimplex, 0.40, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
 
-    var zoomColor = zoomState.Active ? new Scalar(0, 220, 255) : new Scalar(200, 200, 200);
-    string zoomLabel = zoomState.Active
-        ? $"Zoom: {zoomState.CurrentZoom:F2}x [PINCH ACTIVE] (R: Reset)"
-        : $"Zoom: {zoomState.CurrentZoom:F2}x (R: Reset)";
+    string grabLabel;
+    Scalar grabColor;
 
-    Cv2.PutText(frame, zoomLabel, new Point(20, 70),
-        HersheyFonts.HersheySimplex, 0.42, zoomColor, 1, LineTypes.AntiAlias);
+    if (objCtrl.GrabState.Active)
+    {
+        grabLabel = "GRABBED [MOVING]";
+        grabColor = new Scalar(0, 100, 255);
+    }
+    else if (objCtrl.GrabState.HoldDurationSeconds > 0)
+    {
+        grabLabel = $"HOLD ({objCtrl.GrabState.HoldDurationSeconds:F1}s/2.0s)";
+        grabColor = new Scalar(0, 180, 255);
+    }
+    else
+    {
+        grabLabel = "Ready (2s hold)";
+        grabColor = new Scalar(200, 200, 200);
+    }
+
+    string statusLine = $"Faust: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x";
+    Cv2.PutText(frame, statusLine, new Point(20, 72),
+        HersheyFonts.HersheySimplex, 0.38, grabColor, 1, LineTypes.AntiAlias);
 }
