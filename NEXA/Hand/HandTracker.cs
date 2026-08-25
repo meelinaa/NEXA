@@ -89,93 +89,91 @@ public class HandTracker : IDisposable
         double palmSize = hand.Distance(0, 9); // Wrist to middle finger MCP
         if (palmSize <= 1.0) return "Hand";
 
-        // Check extended fingers
-        // Finger is extended if tip is further from wrist than PIP joint
-        bool thumbExt = hand.Distance(4, 0) > hand.Distance(2, 0) * 1.15;
-        bool indexExt = hand.Distance(8, 0) > hand.Distance(6, 0) * 1.15;
-        bool middleExt = hand.Distance(12, 0) > hand.Distance(10, 0) * 1.15;
-        bool ringExt = hand.Distance(16, 0) > hand.Distance(14, 0) * 1.15;
-        bool pinkyExt = hand.Distance(20, 0) > hand.Distance(18, 0) * 1.15;
+        // 1. Finger Extension Checks (Spitzen weiter weg vom Knöchel als Mittelgelenke)
+        bool indexExt = hand.Distance(8, 0) > hand.Distance(6, 0) * 1.12 && hand.Distance(8, 5) > hand.Distance(6, 5) * 1.25;
+        bool middleExt = hand.Distance(12, 0) > hand.Distance(10, 0) * 1.12 && hand.Distance(12, 9) > hand.Distance(10, 9) * 1.25;
+        bool ringExt = hand.Distance(16, 0) > hand.Distance(14, 0) * 1.12 && hand.Distance(16, 13) > hand.Distance(14, 13) * 1.25;
+        bool pinkyExt = hand.Distance(20, 0) > hand.Distance(18, 0) * 1.12 && hand.Distance(20, 17) > hand.Distance(18, 17) * 1.25;
+
+        // 2. Thumb Extension Check (Daumen ist weit von den Fingerknöcheln abgespreizt und gestreckt)
+        double thumbToKnuckle5 = hand.Distance(4, 5); // Abstand Daumenspitze zu Zeigefingerknöchel
+        double thumbToKnuckle9 = hand.Distance(4, 9); // Abstand Daumenspitze zu Mittelfingerknöchel
+        double thumbTipToWrist = hand.Distance(4, 0);
+
+        bool thumbStretchedOut = thumbToKnuckle5 > palmSize * 0.58 && thumbToKnuckle9 > palmSize * 0.68;
+        bool thumbWideL = thumbToKnuckle5 > palmSize * 0.72 && thumbToKnuckle9 > palmSize * 0.85;
 
         // Finger gaps
         double indexMiddleGap = hand.Distance(8, 12);
         double middleRingGap = hand.Distance(12, 16);
         double ringPinkyGap = hand.Distance(16, 20);
 
-        bool spockSplit = middleRingGap > indexMiddleGap * 1.6 && middleRingGap > ringPinkyGap * 1.6;
+        bool spockSplit = middleRingGap > indexMiddleGap * 1.5 && middleRingGap > ringPinkyGap * 1.5;
 
-        // 1. Spock (Vulcan Salute)
-        if (thumbExt && indexExt && middleExt && ringExt && pinkyExt && spockSplit)
+        // --- GESTENERKENNUNG ---
+
+        // A. Spock (Vulcan Salute)
+        if (thumbStretchedOut && indexExt && middleExt && ringExt && pinkyExt && spockSplit)
         {
             return "Spock";
         }
 
-        // 2. Fist (Faust: Alle 4 Finger eingeklappt, Daumen liegt über den Fingern)
-        // Bei unklarer Haltung (alle 4 Finger eingerollt) wird immer vorrangig Faust gewählt!
-        bool allFourFingersFolded = !indexExt && !middleExt && !ringExt && !pinkyExt;
-        double indexCurlDist = hand.Distance(8, 0); // Zeigefingerspitze zum Handgelenk
-
-        if (allFourFingersFolded)
-        {
-            // Wenn alle 4 Finger gebeugt sind -> Faust
-            return "Fist";
-        }
-
-        // 3. L-Sign (Daumen und Zeigefinger gestreckt, restliche 3 Finger gefaltet)
-        double thumbIndexDist = hand.Distance(4, 8);
-        if (thumbExt && indexExt && !middleExt && !ringExt && !pinkyExt && thumbIndexDist > palmSize * 0.75)
-        {
-            return "L";
-        }
-
-        // 4. Pinch Closed & Zoom (Mittel-, Ring-, kleiner Finger gefaltet, Zeigefinger und Daumen aktiv)
-        if (!middleExt && !ringExt && !pinkyExt)
-        {
-            if (thumbIndexDist < palmSize * 0.25)
-            {
-                return "Pinch Closed";
-            }
-            return "Zoom (L <-> Pinch)";
-        }
-
-        // 5. Pinch mit offener Hand (restliche Finger gestreckt oder neutral)
-        if (thumbIndexDist < palmSize * 0.25)
-        {
-            return "Pinch";
-        }
-
-        // 6. Open Hand (Alle 5 Finger gestreckt)
-        if (thumbExt && indexExt && middleExt && ringExt && pinkyExt)
+        // B. Open Palm (Alle 5 Finger gestreckt)
+        if (indexExt && middleExt && ringExt && pinkyExt && (thumbStretchedOut || thumbToKnuckle5 > palmSize * 0.45))
         {
             return "Open Palm";
         }
 
-        // 7. Victory / Peace (Index + Middle extended, others closed)
+        // C. 4 Finger eingeklappt (Index, Mittel, Ring, Pinky sind alle gefaltet)
+        if (!indexExt && !middleExt && !ringExt && !pinkyExt)
+        {
+            // Thumbs Up: Daumen ist nach oben aufgerichtet, weit weg von den gefalteten Fingern
+            double thumbToIndexTip = hand.Distance(4, 8);
+            bool thumbPointsUp = lm[4].Y < (lm[2].Y - palmSize * 0.15); // Spitze deutlich höher als Knöchel
+
+            if (thumbStretchedOut && thumbToIndexTip > palmSize * 0.50 && thumbPointsUp)
+            {
+                return "Thumbs Up";
+            }
+
+            // Ansonsten: Faust (Daumen liegt über den Fingern oder an der Seite)
+            return "Fist";
+        }
+
+        // D. Peace / Victory (Zeige- und Mittelfinger gestreckt)
         if (indexExt && middleExt && !ringExt && !pinkyExt)
         {
             return "Peace";
         }
 
-        // 8. Pointing (Index extended, others closed)
-        if (indexExt && !middleExt && !ringExt && !pinkyExt)
-        {
-            return "Pointing";
-        }
-
-        // Thumbs Up (Thumb extended up, other fingers folded)
-        if (thumbExt && !indexExt && !middleExt && !ringExt && !pinkyExt)
-        {
-            // Check if thumb tip is above wrist
-            if (lm[4].Y < lm[0].Y)
-            {
-                return "Thumbs Up";
-            }
-        }
-
-        // Rock / Spider-Man (Thumb, Index, Pinky extended, Middle & Ring folded)
+        // E. Rock / Spider-Man (Zeigefinger und kleiner Finger gestreckt)
         if (indexExt && pinkyExt && !middleExt && !ringExt)
         {
             return "Rock";
+        }
+
+        // F. Pinch-Prüfung (Daumenspitze und Zeigefingerspitze berühren sich)
+        double thumbIndexDist = hand.Distance(4, 8);
+        if (thumbIndexDist < palmSize * 0.25)
+        {
+            if (!middleExt && !ringExt && !pinkyExt)
+            {
+                return "Pinch Closed";
+            }
+            return "Pinch";
+        }
+
+        // G. Nur Zeigefinger aktiv (Mittel, Ring, Pinky gefaltet)
+        if (indexExt && !middleExt && !ringExt && !pinkyExt)
+        {
+            // L-Sign: Daumen ist absichtlich weit im 90°-Winkel abgespreizt
+            if (thumbWideL)
+            {
+                return "L";
+            }
+
+            // Normales Pointing (Daumen eingeklappt oder neutral am Zeigefinger anliegend)
+            return "Pointing";
         }
 
         return "Tracking";

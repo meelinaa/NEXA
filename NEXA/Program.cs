@@ -1,6 +1,11 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using NEXA;
+using NEXA.Hand;
 using NEXA.Object;
 using OpenCvSharp;
-using System.Diagnostics;
 
 Console.WriteLine("==================================================");
 Console.WriteLine("  N.E.X.A. - MediaPipe Hand Tracking (ONNX + OpenCV)");
@@ -28,6 +33,7 @@ Console.WriteLine("Loading MediaPipe ONNX Models...");
 using var tracker = new HandTracker(palmModelPath, landmarkModelPath);
 var renderer = new HandMeshRenderer();
 var virtualObject = new VirtualObjectController();
+var mouseController = new MouseController();
 
 if (args.Length > 0 && args[0] == "--test")
 {
@@ -37,6 +43,8 @@ if (args.Length > 0 && args[0] == "--test")
     renderer.Render(testFrame, results);
     virtualObject.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
     virtualObject.Render(testFrame);
+    mouseController.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
+    mouseController.RenderFeedback(testFrame, results.FirstOrDefault());
     Console.WriteLine($"[PASS] Pipeline executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -63,6 +71,7 @@ using var frame = new Mat();
 
 Console.WriteLine("\nControls:");
 Console.WriteLine("  [ESC] / [Q] : Beenden");
+Console.WriteLine("  [C]         : Maus-Steuerung Ein-/Ausschalten");
 Console.WriteLine("  [S]         : Glättung Umschalten (Smooth vs Frame-Direct)");
 Console.WriteLine("  [J]         : Gelenkpunkte (Joints) Umschalten");
 Console.WriteLine("  [B]         : Bounding-Box & Gesten-Tag Umschalten");
@@ -90,18 +99,24 @@ while (true)
 
     // 1. Process Hand Tracking
     var trackedHands = tracker.ProcessFrame(frame);
-
-    // 2. Process Relative Grab & Zoom on Virtual Object
     var primaryHand = trackedHands.FirstOrDefault();
+
+    // 2. Process Mouse Movement & Click Sequence (Pointing -> Open -> Pointing)
+    mouseController.Update(primaryHand, frame.Width, frame.Height);
+
+    // 3. Process Relative Grab & Zoom on Virtual Object
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 3. Render Hand Skeleton Bones
+    // 4. Render Hand Skeleton Bones
     renderer.Render(frame, trackedHands);
 
-    // 4. Render Virtual Test Target (Grab & Zoom Object)
+    // 5. Render Mouse Click Feedback Animation & Priming Arc
+    mouseController.RenderFeedback(frame, primaryHand);
+
+    // 6. Render Virtual Test Target (Grab & Zoom Object)
     virtualObject.Render(frame);
 
-    // 5. FPS calculation
+    // 7. FPS calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -110,20 +125,24 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 6. Render HUD
+    // 8. Render HUD
     if (showHud)
     {
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController);
     }
 
-    // 7. Display Frame
+    // 9. Display Frame
     window.ShowImage(frame);
 
-    // 8. Handle User Input
+    // 10. Handle User Input
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
         break;
+    }
+    else if (key == 'c' || key == 'C')
+    {
+        mouseController.Enabled = !mouseController.Enabled;
     }
     else if (key == 's' || key == 'S')
     {
@@ -149,40 +168,32 @@ while (true)
 
 Console.WriteLine("Shutting down NEXA Hand Tracking...");
 
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl)
 {
-    var hudRect = new Rect(10, 10, 340, 85);
+    var hudRect = new Rect(10, 10, 360, 95);
     using var overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
     Cv2.Rectangle(frame, hudRect, new Scalar(0, 220, 255), 1);
 
-    Cv2.PutText(frame, "NEXA HAND SKELETON (ONNX)", new Point(20, 30),
-        HersheyFonts.HersheySimplex, 0.52, new Scalar(0, 255, 255), 1, LineTypes.AntiAlias);
+    Cv2.PutText(frame, "NEXA HAND MOUSE & SKELETON", new Point(20, 30),
+        HersheyFonts.HersheySimplex, 0.50, new Scalar(0, 255, 255), 1, LineTypes.AntiAlias);
 
     Cv2.PutText(frame, $"FPS: {fps:F1} | Hands: {handsCount} | Filter: {(smoothed ? "ON" : "OFF")}", new Point(20, 50),
-        HersheyFonts.HersheySimplex, 0.40, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
+        HersheyFonts.HersheySimplex, 0.38, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
 
-    string grabLabel;
-    Scalar grabColor;
+    string mouseStatus = mouseCtrl.Enabled
+        ? (mouseCtrl.DwellState.IsHovering && mouseCtrl.DwellState.HoverProgress > 0.05
+            ? $"Verweilklick: {(int)(mouseCtrl.DwellState.HoverProgress * 100)}%"
+            : "Aktiv (Zeigen zum Bewegen)")
+        : "AUS (Taste C)";
+    var mouseColor = mouseCtrl.Enabled ? new Scalar(0, 255, 120) : new Scalar(160, 160, 160);
 
-    if (objCtrl.GrabState.Active)
-    {
-        grabLabel = "GRABBED [MOVING]";
-        grabColor = new Scalar(0, 100, 255);
-    }
-    else if (objCtrl.GrabState.HoldDurationSeconds > 0)
-    {
-        grabLabel = $"HOLD ({objCtrl.GrabState.HoldDurationSeconds:F1}s/2.0s)";
-        grabColor = new Scalar(0, 180, 255);
-    }
-    else
-    {
-        grabLabel = "Ready (2s hold)";
-        grabColor = new Scalar(200, 200, 200);
-    }
+    Cv2.PutText(frame, $"Maus (C): {mouseStatus}", new Point(20, 68),
+        HersheyFonts.HersheySimplex, 0.38, mouseColor, 1, LineTypes.AntiAlias);
 
-    string statusLine = $"Faust: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x";
-    Cv2.PutText(frame, statusLine, new Point(20, 72),
-        HersheyFonts.HersheySimplex, 0.38, grabColor, 1, LineTypes.AntiAlias);
+    string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
+    string objStatus = $"Faust: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
+    Cv2.PutText(frame, objStatus, new Point(20, 86),
+        HersheyFonts.HersheySimplex, 0.36, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }
