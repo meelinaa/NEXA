@@ -117,9 +117,37 @@ public class HandTracker : IDisposable
         bool ringExt = hand.Distance(16, 0) > hand.Distance(14, 0) * 1.15;
         bool pinkyExt = hand.Distance(20, 0) > hand.Distance(18, 0) * 1.15;
 
-        // Pinch check (Thumb tip close to Index tip)
-        double pinchDist = hand.Distance(4, 8);
-        if (pinchDist < palmSize * 0.25)
+        // Finger gaps
+        double indexMiddleGap = hand.Distance(8, 12);
+        double middleRingGap = hand.Distance(12, 16);
+        double ringPinkyGap = hand.Distance(16, 20);
+
+        bool spockSplit = middleRingGap > indexMiddleGap * 1.6 && middleRingGap > ringPinkyGap * 1.6;
+
+        // Spock (Vulcan Salute)
+        if (thumbExt && indexExt && middleExt && ringExt && pinkyExt && spockSplit)
+        {
+            return "Spock";
+        }
+
+        // L / Pinch Closed / Zoom Pinch-L (Restliche Finger Mittel, Ring, Kleiner sind gefaltet)
+        double thumbIndexDist = hand.Distance(4, 8);
+        if (!middleExt && !ringExt && !pinkyExt)
+        {
+            if (thumbIndexDist < palmSize * 0.28)
+            {
+                return "Pinch Closed";
+            }
+            if (thumbExt && indexExt && thumbIndexDist > palmSize * 0.8)
+            {
+                return "L";
+            }
+            // Kontinuierliche Zoom-Spanne zwischen Pinch Closed und L
+            return "Zoom (L <-> Pinch)";
+        }
+
+        // Pinch mit offener Hand (restliche Finger gestreckt oder neutral)
+        if (thumbIndexDist < palmSize * 0.25)
         {
             return "Pinch";
         }
