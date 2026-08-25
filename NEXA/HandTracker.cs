@@ -124,59 +124,59 @@ public class HandTracker : IDisposable
 
         bool spockSplit = middleRingGap > indexMiddleGap * 1.6 && middleRingGap > ringPinkyGap * 1.6;
 
-        // Spock (Vulcan Salute)
+        // 1. Spock (Vulcan Salute)
         if (thumbExt && indexExt && middleExt && ringExt && pinkyExt && spockSplit)
         {
             return "Spock";
         }
 
-        // L / Pinch Closed / Zoom Pinch-L (Restliche Finger Mittel, Ring, Kleiner sind gefaltet)
+        // 2. Fist (Faust: Alle 4 Finger eingeklappt, Daumen liegt über den Fingern)
+        // Bei unklarer Haltung (alle 4 Finger eingerollt) wird immer vorrangig Faust gewählt!
+        bool allFourFingersFolded = !indexExt && !middleExt && !ringExt && !pinkyExt;
+        double indexCurlDist = hand.Distance(8, 0); // Zeigefingerspitze zum Handgelenk
+
+        if (allFourFingersFolded)
+        {
+            // Wenn alle 4 Finger gebeugt sind -> Faust
+            return "Fist";
+        }
+
+        // 3. L-Sign (Daumen und Zeigefinger gestreckt, restliche 3 Finger gefaltet)
         double thumbIndexDist = hand.Distance(4, 8);
+        if (thumbExt && indexExt && !middleExt && !ringExt && !pinkyExt && thumbIndexDist > palmSize * 0.75)
+        {
+            return "L";
+        }
+
+        // 4. Pinch Closed & Zoom (Mittel-, Ring-, kleiner Finger gefaltet, Zeigefinger und Daumen aktiv)
         if (!middleExt && !ringExt && !pinkyExt)
         {
-            if (thumbIndexDist < palmSize * 0.28)
+            if (thumbIndexDist < palmSize * 0.25)
             {
                 return "Pinch Closed";
             }
-            if (thumbExt && indexExt && thumbIndexDist > palmSize * 0.8)
-            {
-                return "L";
-            }
-            // Kontinuierliche Zoom-Spanne zwischen Pinch Closed und L
             return "Zoom (L <-> Pinch)";
         }
 
-        // Pinch mit offener Hand (restliche Finger gestreckt oder neutral)
+        // 5. Pinch mit offener Hand (restliche Finger gestreckt oder neutral)
         if (thumbIndexDist < palmSize * 0.25)
         {
             return "Pinch";
         }
 
-        // Fist (all 4 fingers folded close to wrist)
-        double[] tipDists = {
-            hand.Distance(8, 0),
-            hand.Distance(12, 0),
-            hand.Distance(16, 0),
-            hand.Distance(20, 0)
-        };
-        if (tipDists.Average() < palmSize * 0.95 && !indexExt && !middleExt && !ringExt && !pinkyExt)
-        {
-            return "Fist";
-        }
-
-        // Open Hand
+        // 6. Open Hand (Alle 5 Finger gestreckt)
         if (thumbExt && indexExt && middleExt && ringExt && pinkyExt)
         {
             return "Open Palm";
         }
 
-        // Victory / Peace (Index + Middle extended, others closed)
+        // 7. Victory / Peace (Index + Middle extended, others closed)
         if (indexExt && middleExt && !ringExt && !pinkyExt)
         {
             return "Peace";
         }
 
-        // Pointing (Index extended, others closed)
+        // 8. Pointing (Index extended, others closed)
         if (indexExt && !middleExt && !ringExt && !pinkyExt)
         {
             return "Pointing";
