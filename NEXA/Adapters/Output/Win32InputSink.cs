@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenCvSharp;
 
 namespace NEXA.Adapters.Output;
 
@@ -14,6 +18,7 @@ namespace NEXA.Adapters.Output;
 /// <item><description>Translates virtual cursor positions into Windows system cursor moves via <c>SetCursorPos</c>.</description></item>
 /// <item><description>Constructs and dispatches synthesized mouse clicks and mouse wheel rotation events via <c>SendInput</c>.</description></item>
 /// <item><description>Relocates OS application windows via <c>SetWindowPos</c> and changes window states via <c>ShowWindow</c> (Maximize, Minimize, Restore).</description></item>
+/// <item><description>Transfers application windows across physical and virtual monitors via <c>EnumDisplayMonitors</c> and <c>GetMonitorInfo</c>.</description></item>
 /// <item><description>Maintains a centralized <see cref="LastFocusedHwnd"/> and <see cref="LastFocusedTitle"/> context across all features.</description></item>
 /// </list>
 /// </para>
@@ -73,6 +78,14 @@ public class Win32InputSink : IInputSink
     [DllImport("user32.dll")]
     private static extern IntPtr GetDesktopWindow();
 
+    [DllImport("user32.dll")]
+    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
+
+    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
     private const int SM_CXSCREEN = 0; // System metric index for primary monitor width
     private const int SM_CYSCREEN = 1; // System metric index for primary monitor height
 
@@ -106,6 +119,15 @@ public class Win32InputSink : IInputSink
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -234,6 +256,110 @@ public class Win32InputSink : IInputSink
         if (width <= 0) width = 1920;
         if (height <= 0) height = 1080;
         return (width, height);
+    }
+
+    /// <inheritdoc/>
+    public List<Rect> GetAllMonitorBounds()
+    {
+        List<Rect> monitors = new();
+
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMon, IntPtr hdc, ref RECT rc, IntPtr data) =>
+        {
+            MONITORINFO mi = new();
+            mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+            if (GetMonitorInfo(hMon, ref mi))
+            {
+                int w = Math.Max(1, mi.rcMonitor.Right - mi.rcMonitor.Left);
+                int h = Math.Max(1, mi.rcMonitor.Bottom - mi.rcMonitor.Top);
+                monitors.Add(new Rect(mi.rcMonitor.Left, mi.rcMonitor.Top, w, h));
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        if (monitors.Count == 0)
+        {
+            (int sw, int sh) = GetScreenResolution();
+            monitors.Add(new Rect(0, 0, sw, sh));
+        }
+
+        // Sort monitors spatially from left to right along horizontal coordinate
+        return monitors.OrderBy(m => m.X).ToList();
+    }
+
+    /// <inheritdoc/>
+    public bool MoveWindowToAdjacentMonitor(IntPtr hwnd, bool toRight)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+
+        if (!GetWindowBounds(hwnd, out int winX, out int winY, out int winW, out int winH, out _))
+        {
+            return false;
+        }
+
+        List<Rect> monitors = GetAllMonitorBounds();
+        if (monitors.Count <= 1)
+        {
+            return false; // Multi-monitor transfer requires at least 2 active displays
+        }
+
+        int centerX = winX + winW / 2;
+        int centerY = winY + winH / 2;
+
+        // Identify source monitor containing the window center
+        int sourceIndex = -1;
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            Rect m = monitors[i];
+            if (centerX >= m.Left && centerX < m.Right && centerY >= m.Top && centerY < m.Bottom)
+            {
+                sourceIndex = i;
+                break;
+            }
+        }
+
+        if (sourceIndex < 0)
+        {
+            // Fallback: pick closest monitor by distance to center
+            double minDist = double.MaxValue;
+            for (int i = 0; i < monitors.Count; i++)
+            {
+                Rect m = monitors[i];
+                double mcx = m.X + m.Width / 2.0;
+                double mcy = m.Y + m.Height / 2.0;
+                double d = Math.Pow(centerX - mcx, 2) + Math.Pow(centerY - mcy, 2);
+                if (d < minDist)
+                {
+                    minDist = d;
+                    sourceIndex = i;
+                }
+            }
+        }
+
+        int targetIndex = toRight
+            ? (sourceIndex + 1) % monitors.Count
+            : (sourceIndex - 1 + monitors.Count) % monitors.Count;
+
+        Rect src = monitors[sourceIndex];
+        Rect dst = monitors[targetIndex];
+
+        // Maintain relative proportional offsets within monitor workspace
+        double rx = (double)(winX - src.X) / src.Width;
+        double ry = (double)(winY - src.Y) / src.Height;
+        double rw = (double)winW / src.Width;
+        double rh = (double)winH / src.Height;
+
+        int newW = Math.Clamp((int)Math.Round(rw * dst.Width), 320, dst.Width);
+        int newH = Math.Clamp((int)Math.Round(rh * dst.Height), 240, dst.Height);
+        int newX = dst.X + (int)Math.Round(rx * dst.Width);
+        int newY = dst.Y + (int)Math.Round(ry * dst.Height);
+
+        newX = Math.Clamp(newX, dst.Left, dst.Right - Math.Min(newW, 120));
+        newY = Math.Clamp(newY, dst.Top, dst.Bottom - Math.Min(newH, 120));
+
+        SetWindowRect(hwnd, newX, newY, newW, newH);
+        BringWindowToForeground(hwnd);
+
+        return true;
     }
 
     /// <inheritdoc/>

@@ -1,12 +1,15 @@
+using System.Collections.Generic;
+using OpenCvSharp;
+
 namespace NEXA.Adapters.Output;
 
 /// <summary>
-/// Output port abstraction interface for operating system input injection, window manipulation, and centralized focus state.
+/// Output port abstraction interface for operating system input injection, window manipulation, multi-monitor dispatch, and centralized focus state.
 /// <para>
 /// <b>What it is:</b> A decoupled contract defining all physical hardware and OS commands that NEXA can issue.
 /// </para>
 /// <para>
-/// <b>What it does:</b> Provides unified methods for scrolling, cursor positioning, left-clicking, window relocation, window resizing, atomic window repositioning/resizing, window maximization/minimization, and focus tracking.
+/// <b>What it does:</b> Provides unified methods for scrolling, cursor positioning, left-clicking, window relocation, window resizing, multi-monitor window transfer, window maximization/minimization, and focus tracking.
 /// </para>
 /// <para>
 /// <b>Why it is used:</b> Shields domain logic and high-level controllers from platform-specific Win32 P/Invoke APIs, enabling mockability and automated unit testing.
@@ -60,6 +63,20 @@ public interface IInputSink
     /// <param name="width">Target window width in pixels.</param>
     /// <param name="height">Target window height in pixels.</param>
     void SetWindowRect(IntPtr hwnd, int x, int y, int width, int height);
+
+    /// <summary>
+    /// Translocate an application window to the next physically adjacent desktop monitor in the specified horizontal direction.
+    /// </summary>
+    /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
+    /// <param name="toRight"><c>true</c> to move to the monitor to the right; <c>false</c> to move to the left.</param>
+    /// <returns><c>true</c> if successfully transferred to a different display; otherwise, <c>false</c>.</returns>
+    bool MoveWindowToAdjacentMonitor(IntPtr hwnd, bool toRight);
+
+    /// <summary>
+    /// Enumerates the desktop pixel bounds of all active physical and virtual display monitors.
+    /// </summary>
+    /// <returns>A list of bounding rectangles in virtual desktop screen space.</returns>
+    List<Rect> GetAllMonitorBounds();
 
     /// <summary>
     /// Brings the specified native OS window to the top of the Z-order and sets it as the foreground window.
