@@ -151,28 +151,29 @@ if (args.Length > 0 && args[0] == "--test")
     (bool shouldResize2, int winW2, int winH2) = testResize.Update(zoomHand, 800, 600, 1920, 1080);
     if (!shouldResize2 || winW2 <= 800) throw new Exception("WindowResizeDetector failed to scale window up.");
 
-    // Automated Unit Test 4: Snap-to-Side & Un-snap Simulation
-    Console.WriteLine("Testing Snap-to-Side Edge Docking & Seamless Un-snap...");
+    // Automated Unit Test 4: 8-Zone Snap-to-Side & Corner Simulation
+    Console.WriteLine("Testing 8-Zone Snap Docking (Corner & Half Split)...");
     WindowGrabDetector testSnapDetector = new(1920, 1080);
     testSnapDetector.State.IsGrabbed = true;
     testSnapDetector.State.TargetHwnd = new IntPtr(999);
-    testSnapDetector.State.InitialWindowBounds = new Rect(400, 300, 800, 600);
-    testSnapDetector.State.PreSnapBounds = new Rect(400, 300, 800, 600);
+    testSnapDetector.State.InitialWindowBounds = new Rect(400, 300, 960, 540); // 50%x50%
+    testSnapDetector.State.PreSnapBounds = new Rect(400, 300, 960, 540);
     testSnapDetector.State.InitialHandScreenX = 500;
     testSnapDetector.State.InitialHandScreenY = 400;
 
     TrackedHand edgeHand = new() { Gesture = "Fist" };
-    // Map to screen X = 0 (left edge <= 35)
-    edgeHand.SmoothedLandmarks2D[9] = new Point2f(1280 * 0.15f, 720 * 0.5f);
+    // Map to top-left corner (normX = 0, normY = 0)
+    edgeHand.SmoothedLandmarks2D[9] = new Point2f(1280 * 0.15f, 720 * 0.15f);
 
     testSnapDetector.Update(edgeHand, 1280, 720, inputSink);
-    if (testSnapDetector.State.ActiveSnap != WindowSnapType.LeftHalf) throw new Exception("Snap Left failed to trigger.");
-    if (testSnapDetector.State.SnapBounds.Width != 1920 / 2) throw new Exception("Snap Left width incorrect.");
+    if (testSnapDetector.State.ActiveSnap != WindowSnapType.TopLeftCorner) throw new Exception("Snap Top-Left Corner failed to trigger.");
+    if (testSnapDetector.State.SnapBounds.Width != 1920 / 2 || testSnapDetector.State.SnapBounds.Height != 1080 / 2) throw new Exception("Snap Top-Left dimensions incorrect.");
 
-    // Drag away from edge to un-dock (screen X = ~384px > 65px)
-    edgeHand.SmoothedLandmarks2D[9] = new Point2f(1280 * 0.35f, 720 * 0.5f);
+    // Wait for 300ms latch lock to expire, then drag inward to un-dock (screen X = ~550px > 307px)
+    Thread.Sleep(310);
+    edgeHand.SmoothedLandmarks2D[9] = new Point2f(1280 * 0.45f, 720 * 0.45f);
     testSnapDetector.Update(edgeHand, 1280, 720, inputSink);
-    if (testSnapDetector.State.ActiveSnap != WindowSnapType.None) throw new Exception("Un-docking failed when pulling hand away from edge.");
+    if (testSnapDetector.State.ActiveSnap != WindowSnapType.None) throw new Exception("Un-docking failed when pulling hand away from corner.");
 
     // Automated Unit Test 5: Monitor Throw Edge-On Recognition & Kinematics
     Console.WriteLine("Testing MonitorThrowDetector (Edge-On Swipe)...");

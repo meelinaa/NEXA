@@ -15,7 +15,7 @@ namespace NEXA.Domain.Grab;
 /// <item><description>Tracks continuous fist hold duration toward the 2.0s engagement threshold.</description></item>
 /// <item><description>Holds the captured window handle (HWND), cached window title, and initial desktop bounds.</description></item>
 /// <item><description>Maintains initial and current hand screen coordinates for delta translation calculations.</description></item>
-/// <item><description>Tracks edge docking state (Snap Left, Snap Right, Snap Top) and pre-snap restoration geometry.</description></item>
+/// <item><description>Tracks edge docking state (Snap Left, Snap Right, Snap Top), lock timer (300ms), and pre-snap restoration geometry.</description></item>
 /// <item><description>Provides a 120ms time-based release debounce to prevent accidental dropouts during camera tracking flutter.</description></item>
 /// </list>
 /// </para>
@@ -112,6 +112,16 @@ public class WindowGrabState
     /// High-resolution stopwatch providing time-based release debounce tolerance.
     /// </summary>
     public Stopwatch ReleaseTimer { get; } = new();
+
+    /// <summary>
+    /// High-resolution stopwatch enforcing a 300ms latch lock immediately upon edge snap docking.
+    /// </summary>
+    public Stopwatch SnapLockTimer { get; } = new();
+
+    /// <summary>
+    /// Minimum duration (300ms) that a window remains firmly locked in snap dock before un-dock pull away is evaluated.
+    /// </summary>
+    public static readonly TimeSpan SnapLockDuration = TimeSpan.FromMilliseconds(300);
 
     /// <summary>
     /// Time-based tolerance (120ms) before confirming gesture release.

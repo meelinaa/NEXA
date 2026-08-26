@@ -6,22 +6,19 @@ using OpenCvSharp;
 namespace NEXA.Domain.Grab;
 
 /// <summary>
-/// Domain-level analyzer evaluating continuous fist-hold gestures, delta window repositioning, and Windows-style Snap-to-Side edge docking.
+/// Domain-level analyzer evaluating continuous fist-hold gestures, delta window repositioning, initial 50%x50% scaling, and 8-zone Snap-to-Side layouts.
 /// <para>
 /// <b>What it is:</b> The gesture detector evaluating real Windows desktop window manipulation.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="number">
-/// <item><description><b>Hold Detection:</b> Requires holding a clenched fist for 2.0 seconds directly over an OS window to engage dragging.</description></item>
+/// <item><description><b>Hold Detection &amp; Auto-Resize:</b> Holding a fist for 2.0s over a window engages dragging and automatically resizes the window to 50% width and 50% height (1/4 screen area) centered under the hand.</description></item>
 /// <item><description><b>Delta Dragging:</b> Translates the window by tracking relative hand coordinate changes from the initial grab anchor.</description></item>
-/// <item><description><b>Edge Snap Docking:</b> Automatically docks the window to Left Half, Right Half, or Top Maximize when dragged near screen borders (&lt;=35px).</description></item>
-/// <item><description><b>Seamless Un-docking:</b> Allows the user to continue dragging away from the docked edge (&gt;65px), seamlessly restoring original geometry.</description></item>
+/// <item><description><b>8-Zone Spatial Snapping:</b> Supports Left/Right half splits (50%x100%), Top/Bottom half splits (100%x50%), and 4 Corner quadrants (50%x50%).</description></item>
+/// <item><description><b>Latch Lock (300ms) &amp; Inward Un-docking:</b> Locks docked geometry for 300ms, requiring a 16% inward pull to un-dock cleanly without accidental drops.</description></item>
 /// <item><description><b>Release Debouncing:</b> Enforces a 120ms buffer to absorb temporary tracking flutter without dropping the window.</description></item>
 /// </list>
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> Provides native-feeling desktop window dragging and docking without accidental triggers or rigid lock-in.
 /// </para>
 /// </summary>
 public class WindowGrabDetector
@@ -47,14 +44,14 @@ public class WindowGrabDetector
     public int ScreenHeight { get; }
 
     /// <summary>
-    /// Pixel distance from monitor borders required to trigger edge snap docking.
+    /// Ratio of monitor dimensions (5.0%) defining the snap engagement zone for hand / window center.
     /// </summary>
-    public const int SnapEdgeMargin = 35;
+    public const double SnapEdgeRatio = 0.05;
 
     /// <summary>
-    /// Pixel distance required to pull away from a docked border before un-snapping back to free dragging.
+    /// Ratio of monitor dimensions (16.0%) defining the inward displacement required to un-dock.
     /// </summary>
-    public const int UnsnapMargin = 65;
+    public const double UnsnapRatio = 0.16;
 
     /// <summary>
     /// Internal smoothed horizontal coordinate accumulator.
@@ -153,21 +150,32 @@ public class WindowGrabDetector
             if (State.HoldDurationSeconds >= State.RequiredHoldSeconds)
             {
                 IntPtr hwnd = inputSink.GetWindowAt(currentHandX, currentHandY);
-                if (hwnd != IntPtr.Zero && inputSink.GetWindowBounds(hwnd, out int winX, out int winY, out int winW, out int winH, out string title))
+                if (hwnd != IntPtr.Zero && inputSink.GetWindowBounds(hwnd, out int _, out int _, out int _, out int _, out string title))
                 {
                     State.IsGrabbed = true;
                     State.TargetHwnd = hwnd;
                     State.CachedWindowTitle = title;
-                    State.InitialWindowBounds = new Rect(winX, winY, winW, winH);
-                    State.PreSnapBounds = new Rect(winX, winY, winW, winH);
+
+                    // Automatically resize grabbed window to 50% width and 50% height (1/4 screen area) centered under hand
+                    int grabW = ScreenWidth / 2;
+                    int grabH = ScreenHeight / 2;
+                    int maxAllowedX = Math.Max(0, ScreenWidth - grabW);
+                    int maxAllowedY = Math.Max(0, ScreenHeight - grabH);
+                    int grabX = Math.Clamp(currentHandX - grabW / 2, 0, maxAllowedX);
+                    int grabY = Math.Clamp(currentHandY - 25, 0, maxAllowedY);
+
+                    inputSink.SetWindowRect(hwnd, grabX, grabY, grabW, grabH);
+
+                    State.InitialWindowBounds = new Rect(grabX, grabY, grabW, grabH);
+                    State.PreSnapBounds = new Rect(grabX, grabY, grabW, grabH);
                     State.InitialHandScreenX = currentHandX;
                     State.InitialHandScreenY = currentHandY;
-                    State.CurrentTargetX = winX;
-                    State.CurrentTargetY = winY;
+                    State.CurrentTargetX = grabX;
+                    State.CurrentTargetY = grabY;
                     State.ActiveSnap = WindowSnapType.None;
 
-                    _smoothedTargetX = winX;
-                    _smoothedTargetY = winY;
+                    _smoothedTargetX = grabX;
+                    _smoothedTargetY = grabY;
                     _hasInitializedSmoothing = true;
                 }
                 else
@@ -186,63 +194,146 @@ public class WindowGrabDetector
             double rawTargetX = State.InitialWindowBounds.X + deltaX;
             double rawTargetY = State.InitialWindowBounds.Y + deltaY;
 
+            int winW = State.InitialWindowBounds.Width > 0 ? State.InitialWindowBounds.Width : ScreenWidth / 2;
+            int winH = State.InitialWindowBounds.Height > 0 ? State.InitialWindowBounds.Height : ScreenHeight / 2;
+
+            // Window center coordinates
+            double windowCenterX = rawTargetX + winW / 2.0;
+            double windowCenterY = rawTargetY + winH / 2.0;
+
+            // Percentage-based dynamic margins
+            int snapMarginX = (int)Math.Max(50.0, ScreenWidth * SnapEdgeRatio);
+            int snapMarginY = (int)Math.Max(50.0, ScreenHeight * SnapEdgeRatio);
+            int unsnapMarginX = (int)Math.Max(120.0, ScreenWidth * UnsnapRatio);
+            int unsnapMarginY = (int)Math.Max(120.0, ScreenHeight * UnsnapRatio);
+
+            bool isNearLeft = currentHandX <= snapMarginX || windowCenterX <= snapMarginX;
+            bool isNearRight = currentHandX >= ScreenWidth - snapMarginX || windowCenterX >= ScreenWidth - snapMarginX;
+            bool isNearTop = currentHandY <= snapMarginY || windowCenterY <= snapMarginY;
+            bool isNearBottom = currentHandY >= ScreenHeight - snapMarginY || windowCenterY >= ScreenHeight - snapMarginY;
+
             // =========================================================================
-            // SNAP-TO-SIDE EDGE DOCKING LOGIC
+            // 8-ZONE SNAP-TO-SIDE & CORNER DOCKING LOGIC
             // =========================================================================
             if (!State.IsSnapped)
             {
-                // Check if hand is dragged near desktop screen borders
-                if (currentHandX <= SnapEdgeMargin)
+                // 1. Check 4 Corner Quadrants first (50% Width x 50% Height)
+                if (isNearTop && isNearLeft)
+                {
+                    State.ActiveSnap = WindowSnapType.TopLeftCorner;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(0, 0, ScreenWidth / 2, ScreenHeight / 2);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
+                }
+                else if (isNearTop && isNearRight)
+                {
+                    State.ActiveSnap = WindowSnapType.TopRightCorner;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(ScreenWidth / 2, 0, ScreenWidth / 2, ScreenHeight / 2);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
+                }
+                else if (isNearBottom && isNearLeft)
+                {
+                    State.ActiveSnap = WindowSnapType.BottomLeftCorner;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(0, ScreenHeight / 2, ScreenWidth / 2, ScreenHeight / 2);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
+                }
+                else if (isNearBottom && isNearRight)
+                {
+                    State.ActiveSnap = WindowSnapType.BottomRightCorner;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(ScreenWidth / 2, ScreenHeight / 2, ScreenWidth / 2, ScreenHeight / 2);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
+                }
+                // 2. Check Vertical Halves (50% Width x 100% Height)
+                else if (isNearLeft)
                 {
                     State.ActiveSnap = WindowSnapType.LeftHalf;
                     State.PreSnapBounds = State.InitialWindowBounds;
                     State.SnapBounds = new Rect(0, 0, ScreenWidth / 2, ScreenHeight);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
                 }
-                else if (currentHandX >= ScreenWidth - SnapEdgeMargin)
+                else if (isNearRight)
                 {
                     State.ActiveSnap = WindowSnapType.RightHalf;
                     State.PreSnapBounds = State.InitialWindowBounds;
                     State.SnapBounds = new Rect(ScreenWidth / 2, 0, ScreenWidth / 2, ScreenHeight);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
                 }
-                else if (currentHandY <= SnapEdgeMargin)
+                // 3. Check Horizontal Halves (100% Width x 50% Height)
+                else if (isNearTop)
                 {
-                    State.ActiveSnap = WindowSnapType.TopMaximize;
+                    State.ActiveSnap = WindowSnapType.TopHalf;
                     State.PreSnapBounds = State.InitialWindowBounds;
-                    State.SnapBounds = new Rect(0, 0, ScreenWidth, ScreenHeight);
+                    State.SnapBounds = new Rect(0, 0, ScreenWidth, ScreenHeight / 2);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
+                }
+                else if (isNearBottom)
+                {
+                    State.ActiveSnap = WindowSnapType.BottomHalf;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(0, ScreenHeight / 2, ScreenWidth, ScreenHeight / 2);
+                    State.SnapLockTimer.Restart(); // Lock for 300ms
                 }
             }
             else
             {
-                // Window is currently docked: check if user pulls hand away to seamlessly un-snap
-                bool shouldUnsnap = false;
-                if (State.ActiveSnap == WindowSnapType.LeftHalf && currentHandX > UnsnapMargin)
+                // Enforce 300ms latch lock: during lock duration, keep window firmly docked
+                if (State.SnapLockTimer.Elapsed >= WindowGrabState.SnapLockDuration)
                 {
-                    shouldUnsnap = true;
-                }
-                else if (State.ActiveSnap == WindowSnapType.RightHalf && currentHandX < ScreenWidth - UnsnapMargin)
-                {
-                    shouldUnsnap = true;
-                }
-                else if (State.ActiveSnap == WindowSnapType.TopMaximize && currentHandY > UnsnapMargin)
-                {
-                    shouldUnsnap = true;
-                }
+                    // Window is docked and past lock: check if user pulls hand away by unsnapMargin
+                    bool shouldUnsnap = false;
+                    switch (State.ActiveSnap)
+                    {
+                        case WindowSnapType.LeftHalf:
+                            shouldUnsnap = currentHandX > unsnapMarginX;
+                            break;
+                        case WindowSnapType.RightHalf:
+                            shouldUnsnap = currentHandX < ScreenWidth - unsnapMarginX;
+                            break;
+                        case WindowSnapType.TopHalf:
+                            shouldUnsnap = currentHandY > unsnapMarginY;
+                            break;
+                        case WindowSnapType.BottomHalf:
+                            shouldUnsnap = currentHandY < ScreenHeight - unsnapMarginY;
+                            break;
+                        case WindowSnapType.TopLeftCorner:
+                            shouldUnsnap = currentHandX > unsnapMarginX || currentHandY > unsnapMarginY;
+                            break;
+                        case WindowSnapType.TopRightCorner:
+                            shouldUnsnap = currentHandX < ScreenWidth - unsnapMarginX || currentHandY > unsnapMarginY;
+                            break;
+                        case WindowSnapType.BottomLeftCorner:
+                            shouldUnsnap = currentHandX > unsnapMarginX || currentHandY < ScreenHeight - unsnapMarginY;
+                            break;
+                        case WindowSnapType.BottomRightCorner:
+                            shouldUnsnap = currentHandX < ScreenWidth - unsnapMarginX || currentHandY < ScreenHeight - unsnapMarginY;
+                            break;
+                    }
 
-                if (shouldUnsnap)
-                {
-                    State.ActiveSnap = WindowSnapType.None;
-                    // Re-anchor window to hand location using pre-snap dimensions without jumps
-                    int restoredW = State.PreSnapBounds.Width;
-                    int restoredH = State.PreSnapBounds.Height;
-                    int restoredX = Math.Clamp(currentHandX - restoredW / 2, 0, ScreenWidth - restoredW);
-                    int restoredY = Math.Clamp(currentHandY - 25, 0, ScreenHeight - restoredH);
+                    if (shouldUnsnap)
+                    {
+                        State.ActiveSnap = WindowSnapType.None;
+                        State.SnapLockTimer.Reset();
 
-                    State.InitialWindowBounds = new Rect(restoredX, restoredY, restoredW, restoredH);
-                    State.InitialHandScreenX = currentHandX;
-                    State.InitialHandScreenY = currentHandY;
+                        // Re-anchor window to hand location using pre-snap 50%x50% dimensions safely without ArgumentException
+                        int restoredW = State.PreSnapBounds.Width > 0 ? State.PreSnapBounds.Width : ScreenWidth / 2;
+                        int restoredH = State.PreSnapBounds.Height > 0 ? State.PreSnapBounds.Height : ScreenHeight / 2;
 
-                    _smoothedTargetX = restoredX;
-                    _smoothedTargetY = restoredY;
+                        int maxAllowedX = Math.Max(0, ScreenWidth - restoredW);
+                        int maxAllowedY = Math.Max(0, ScreenHeight - restoredH);
+
+                        int restoredX = Math.Clamp(currentHandX - restoredW / 2, 0, maxAllowedX);
+                        int restoredY = Math.Clamp(currentHandY - 25, 0, maxAllowedY);
+
+                        State.InitialWindowBounds = new Rect(restoredX, restoredY, restoredW, restoredH);
+                        State.InitialHandScreenX = currentHandX;
+                        State.InitialHandScreenY = currentHandY;
+
+                        _smoothedTargetX = restoredX;
+                        _smoothedTargetY = restoredY;
+                    }
                 }
             }
 
@@ -313,6 +404,7 @@ public class WindowGrabDetector
         State.HoldTimer.Reset();
         State.HoldDurationSeconds = 0.0;
         State.ReleaseTimer.Reset();
+        State.SnapLockTimer.Reset();
         _hasInitializedSmoothing = false;
     }
 

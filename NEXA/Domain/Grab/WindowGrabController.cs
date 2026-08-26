@@ -145,43 +145,64 @@ public class WindowGrabController
                 _inputSink.LastFocusedTitle = State.CachedWindowTitle;
             }
 
-            if (State.IsSnapped)
-            {
-                _inputSink.SetWindowRect(hwnd, State.SnapBounds.X, State.SnapBounds.Y, State.SnapBounds.Width, State.SnapBounds.Height);
-            }
-            else
-            {
-                if (State.InitialWindowBounds.Width > 0 && State.InitialWindowBounds.Height > 0)
-                {
-                    _inputSink.SetWindowRect(hwnd, targetX, targetY, State.InitialWindowBounds.Width, State.InitialWindowBounds.Height);
-                }
-                else
-                {
-                    _inputSink.MoveWindow(hwnd, targetX, targetY);
-                }
-            }
-
-            _wasGrabbedLastFrame = true;
-
-            // Process secondary hand pinch-zoom resizing (only when not docked in snap mode)
+            // 1. Process secondary hand pinch-zoom resizing first (when not docked in snap mode)
             if (!State.IsSnapped && secondaryHand != null)
             {
+                int baseW = State.InitialWindowBounds.Width > 0 ? State.InitialWindowBounds.Width : _screenWidth / 2;
+                int baseH = State.InitialWindowBounds.Height > 0 ? State.InitialWindowBounds.Height : _screenHeight / 2;
+
                 (bool shouldResize, int newWidth, int newHeight) = ResizeDetector.Update(
                     secondaryHand,
-                    State.InitialWindowBounds.Width,
-                    State.InitialWindowBounds.Height,
+                    baseW,
+                    baseH,
                     _screenWidth,
                     _screenHeight);
 
-                if (shouldResize)
+                if (shouldResize && newWidth > 0 && newHeight > 0)
                 {
-                    _inputSink.ResizeWindow(hwnd, newWidth, newHeight);
+                    // Compute current center point of the window
+                    double centerX = targetX + baseW / 2.0;
+                    double centerY = targetY + baseH / 2.0;
+
+                    // Calculate center-anchored top-left coordinates for new dimensions
+                    double newTargetX = centerX - newWidth / 2.0;
+                    double newTargetY = centerY - newHeight / 2.0;
+
+                    // Screen boundary clamping: push inward so window never expands beyond monitor borders
+                    int maxBoundX = Math.Max(0, _screenWidth - newWidth);
+                    int maxBoundY = Math.Max(0, _screenHeight - newHeight);
+
+                    int clampedX = Math.Clamp((int)Math.Round(newTargetX), 0, maxBoundX);
+                    int clampedY = Math.Clamp((int)Math.Round(newTargetY), 0, maxBoundY);
+
+                    targetX = clampedX;
+                    targetY = clampedY;
+
+                    State.InitialWindowBounds = new Rect(clampedX, clampedY, newWidth, newHeight);
+                    State.PreSnapBounds = new Rect(clampedX, clampedY, newWidth, newHeight);
+                    State.CurrentTargetX = clampedX;
+                    State.CurrentTargetY = clampedY;
                 }
             }
             else
             {
                 ResizeDetector.Reset();
             }
+
+            // 2. Dispatch window position and dimensions to the operating system
+            if (State.IsSnapped)
+            {
+                _inputSink.SetWindowRect(hwnd, State.SnapBounds.X, State.SnapBounds.Y, State.SnapBounds.Width, State.SnapBounds.Height);
+            }
+            else
+            {
+                int currentW = State.InitialWindowBounds.Width > 0 ? State.InitialWindowBounds.Width : _screenWidth / 2;
+                int currentH = State.InitialWindowBounds.Height > 0 ? State.InitialWindowBounds.Height : _screenHeight / 2;
+
+                _inputSink.SetWindowRect(hwnd, targetX, targetY, currentW, currentH);
+            }
+
+            _wasGrabbedLastFrame = true;
         }
         else
         {
@@ -295,7 +316,12 @@ public class WindowGrabController
                 {
                     WindowSnapType.LeftHalf => "SNAP LEFT (50%)",
                     WindowSnapType.RightHalf => "SNAP RIGHT (50%)",
-                    WindowSnapType.TopMaximize => "SNAP MAXIMIZE (100%)",
+                    WindowSnapType.TopHalf => "SNAP TOP (50%)",
+                    WindowSnapType.BottomHalf => "SNAP BOTTOM (50%)",
+                    WindowSnapType.TopLeftCorner => "SNAP TOP-LEFT (25%)",
+                    WindowSnapType.TopRightCorner => "SNAP TOP-RIGHT (25%)",
+                    WindowSnapType.BottomLeftCorner => "SNAP BOTTOM-LEFT (25%)",
+                    WindowSnapType.BottomRightCorner => "SNAP BOTTOM-RIGHT (25%)",
                     _ => "DOCKED"
                 };
                 tagText = $"[{snapName}] [{titleDisplay}]";

@@ -18,7 +18,7 @@ namespace NEXA.Domain.Grab;
 /// </list>
 /// </para>
 /// <para>
-/// <b>Why it is used:</b> Enables fluid, natural two-hand manipulation where one hand holds the window and the other resizes it in real time.
+/// <b>Why it is used:</b> Enables fluid, natural two-hand manipulation where one hand holds the window and the other resizes it in real time, persisting the modified size.
 /// </para>
 /// </summary>
 public class WindowResizeDetector
@@ -32,8 +32,8 @@ public class WindowResizeDetector
     /// Evaluates hand tracking data for the secondary hand to compute new window width and height.
     /// </summary>
     /// <param name="zoomHand">The secondary tracked hand performing the aperture/pinch gesture.</param>
-    /// <param name="baseWidth">The original native window width at grab inception.</param>
-    /// <param name="baseHeight">The original native window height at grab inception.</param>
+    /// <param name="baseWidth">The current base window width before the pinch interaction.</param>
+    /// <param name="baseHeight">The current base window height before the pinch interaction.</param>
     /// <param name="screenWidth">Primary desktop monitor width in pixels.</param>
     /// <param name="screenHeight">Primary desktop monitor height in pixels.</param>
     /// <returns>A tuple containing a boolean indicating if resizing is active and the target (newWidth, newHeight).</returns>
@@ -67,25 +67,26 @@ public class WindowResizeDetector
             if (State.IsActive)
             {
                 State.IsActive = false;
-                State.LastStableScale = State.CurrentScale;
+                State.CurrentScale = 1.0;
+                State.LastStableScale = 1.0;
+                State.HasInitializedSmoothing = false;
             }
             return (false, 0, 0);
         }
 
-        // On initial zoom engagement: establish baseline ratio and window geometry
+        // On initial zoom engagement: establish baseline ratio and lock base window geometry
         if (!State.IsActive)
         {
             State.IsActive = true;
             State.BaselineRatio = Math.Max(0.08, ratio);
             State.BaseWidth = baseWidth;
             State.BaseHeight = baseHeight;
+            State.CurrentScale = 1.0;
+            State.LastStableScale = 1.0;
 
-            if (!State.HasInitializedSmoothing)
-            {
-                State.SmoothedWidth = baseWidth;
-                State.SmoothedHeight = baseHeight;
-                State.HasInitializedSmoothing = true;
-            }
+            State.SmoothedWidth = baseWidth;
+            State.SmoothedHeight = baseHeight;
+            State.HasInitializedSmoothing = true;
             return (false, baseWidth, baseHeight);
         }
 
@@ -97,7 +98,7 @@ public class WindowResizeDetector
             relativeScale = 1.0;
         }
 
-        double targetScale = Math.Clamp(State.LastStableScale * relativeScale, 0.25, 3.5);
+        double targetScale = Math.Clamp(relativeScale, 0.35, 3.0);
         double rawTargetWidth = State.BaseWidth * targetScale;
         double rawTargetHeight = State.BaseHeight * targetScale;
 
@@ -112,7 +113,7 @@ public class WindowResizeDetector
 
         if (diffMag > 4.0)
         {
-            double alpha = Math.Clamp(0.18 + (diffMag / 200.0) * 0.50, 0.18, 0.75);
+            double alpha = Math.Clamp(0.20 + (diffMag / 180.0) * 0.50, 0.20, 0.80);
             State.SmoothedWidth += diffW * alpha;
             State.SmoothedHeight += diffH * alpha;
         }
