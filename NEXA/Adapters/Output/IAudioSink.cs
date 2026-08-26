@@ -37,4 +37,26 @@ public interface IAudioSink
     /// </summary>
     /// <returns><c>true</c> if muted; otherwise, <c>false</c>.</returns>
     bool IsMuted();
+
+    /// <summary>
+    /// Toggles the system master audio mute state.
+    /// </summary>
+    void ToggleMute();
+
+    /// <summary>
+    /// Sets the master microphone input mute state.
+    /// </summary>
+    /// <param name="isMuted"><c>true</c> to mute microphone input; otherwise, <c>false</c>.</param>
+    void SetMicrophoneMute(bool isMuted);
+
+    /// <summary>
+    /// Queries whether the master microphone input is currently muted.
+    /// </summary>
+    /// <returns><c>true</c> if microphone is muted; otherwise, <c>false</c>.</returns>
+    bool IsMicrophoneMuted();
+
+    /// <summary>
+    /// Toggles the master microphone input mute state.
+    /// </summary>
+    void ToggleMicrophoneMute();
 }

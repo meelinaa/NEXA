@@ -18,8 +18,10 @@ namespace NEXA.Adapters.Output;
 public class Win32AudioSink : IAudioSink
 {
     private IAudioEndpointVolume? _endpointVolume = null;
+    private IAudioEndpointVolume? _micEndpointVolume = null;
     private float _cachedVolume = 0.5f;
     private bool _cachedMute = false;
+    private bool _cachedMicMute = false;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Win32AudioSink"/> class and activates the default audio endpoint volume interface.
@@ -36,7 +38,7 @@ public class Win32AudioSink : IAudioSink
             MMDeviceEnumeratorComObject enumeratorObj = new();
             IMMDeviceEnumerator enumerator = (IMMDeviceEnumerator)enumeratorObj;
 
-            // eRender = 0, eMultimedia = 1
+            // 1. Output Speakers: eRender = 0, eMultimedia = 1
             enumerator.GetDefaultAudioEndpoint(0, 1, out IMMDevice device);
             if (device != null)
             {
@@ -50,11 +52,26 @@ public class Win32AudioSink : IAudioSink
                     _endpointVolume.GetMute(out _cachedMute);
                 }
             }
+
+            // 2. Input Microphone: eCapture = 1, eMultimedia = 1
+            enumerator.GetDefaultAudioEndpoint(1, 1, out IMMDevice micDevice);
+            if (micDevice != null)
+            {
+                Guid IID_IAudioEndpointVolume = typeof(IAudioEndpointVolume).GUID;
+                micDevice.Activate(ref IID_IAudioEndpointVolume, 23, IntPtr.Zero, out object micVolumeObj);
+                _micEndpointVolume = micVolumeObj as IAudioEndpointVolume;
+
+                if (_micEndpointVolume != null)
+                {
+                    _micEndpointVolume.GetMute(out _cachedMicMute);
+                }
+            }
         }
         catch
         {
             // Graceful fallback in environments without physical audio hardware (e.g. CI/virtual test runners)
             _endpointVolume = null;
+            _micEndpointVolume = null;
         }
     }
 
@@ -132,6 +149,57 @@ public class Win32AudioSink : IAudioSink
             }
         }
         return _cachedMute;
+    }
+
+    /// <inheritdoc/>
+    public void ToggleMute()
+    {
+        bool current = IsMuted();
+        SetMute(!current);
+    }
+
+    /// <inheritdoc/>
+    public void SetMicrophoneMute(bool isMuted)
+    {
+        _cachedMicMute = isMuted;
+        if (_micEndpointVolume != null)
+        {
+            try
+            {
+                Guid emptyContext = Guid.Empty;
+                _micEndpointVolume.SetMute(isMuted, ref emptyContext);
+            }
+            catch
+            {
+                TryInitializeAudioEndpoint();
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool IsMicrophoneMuted()
+    {
+        if (_micEndpointVolume != null)
+        {
+            try
+            {
+                _micEndpointVolume.GetMute(out bool isMuted);
+                _cachedMicMute = isMuted;
+                return isMuted;
+            }
+            catch
+            {
+                TryInitializeAudioEndpoint();
+            }
+        }
+        return _cachedMicMute;
+    }
+
+    /// <inheritdoc/>
+    public void ToggleMicrophoneMute()
+    {
+        bool current = IsMicrophoneMuted();
+        SetMicrophoneMute(!current);
     }
 
     #region Windows Core Audio COM Interfaces
