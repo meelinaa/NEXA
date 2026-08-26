@@ -313,7 +313,7 @@ public class HandLandmarkEstimator : IDisposable
         int right = padW - left;
         int bottom = padH - top;
 
-        using Mat padded = new();
+        Mat padded = new();
         Cv2.CopyMakeBorder(cropped, padded, top, bottom, left, right, BorderTypes.Constant, Scalar.All(0));
         cropped.Dispose();
 

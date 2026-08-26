@@ -46,8 +46,34 @@ public interface IInputSink
     void MoveWindow(IntPtr hwnd, int x, int y);
 
     /// <summary>
+    /// Brings the specified native OS window to the top of the Z-order and sets it as the foreground window.
+    /// </summary>
+    /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
+    void BringWindowToForeground(IntPtr hwnd);
+
+    /// <summary>
     /// Queries the primary display resolution of the active desktop.
     /// </summary>
     /// <returns>A tuple containing (width, height) in physical pixels.</returns>
     (int width, int height) GetScreenResolution();
+
+    /// <summary>
+    /// Identifies the top-level application window located at the given desktop screen coordinate.
+    /// </summary>
+    /// <param name="screenX">Horizontal screen pixel coordinate.</param>
+    /// <param name="screenY">Vertical screen pixel coordinate.</param>
+    /// <returns>The top-level window handle (HWND), or <see cref="IntPtr.Zero"/> if none is found or if it is a desktop/system window.</returns>
+    IntPtr GetWindowAt(int screenX, int screenY);
+
+    /// <summary>
+    /// Queries the bounding rectangle and window title for a given window handle.
+    /// </summary>
+    /// <param name="hwnd">Window handle pointer (HWND).</param>
+    /// <param name="x">Left pixel coordinate on the desktop.</param>
+    /// <param name="y">Top pixel coordinate on the desktop.</param>
+    /// <param name="width">Width of the window in pixels.</param>
+    /// <param name="height">Height of the window in pixels.</param>
+    /// <param name="title">Cached title text of the window.</param>
+    /// <returns><c>true</c> if valid window metrics and title were retrieved; otherwise, <c>false</c>.</returns>
+    bool GetWindowBounds(IntPtr hwnd, out int x, out int y, out int width, out int height, out string title);
 }
