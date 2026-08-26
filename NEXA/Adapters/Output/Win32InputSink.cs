@@ -57,6 +57,9 @@ public class Win32InputSink : IInputSink
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool LockWorkStation();
+
     [DllImport("user32.dll")]
     private static extern IntPtr WindowFromPoint(POINT point);
 
@@ -181,6 +184,12 @@ public class Win32InputSink : IInputSink
     {
         keybd_event(0xB3, 0, 0x0001, UIntPtr.Zero); // VK_MEDIA_PLAY_PAUSE down
         keybd_event(0xB3, 0, 0x0001 | 0x0002, UIntPtr.Zero); // VK_MEDIA_PLAY_PAUSE up
+    }
+
+    /// <inheritdoc/>
+    public void LockWorkstation()
+    {
+        LockWorkStation();
     }
 
     /// <inheritdoc/>

@@ -44,6 +44,11 @@ public interface IInputSink
     void SendMediaPlayPause();
 
     /// <summary>
+    /// Locks the Windows desktop session immediately (equivalent to Win + L).
+    /// </summary>
+    void LockWorkstation();
+
+    /// <summary>
     /// Relocates a native OS window to the specified desktop coordinates without altering its size or Z-order.
     /// </summary>
     /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>

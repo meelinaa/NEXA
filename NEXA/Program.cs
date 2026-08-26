@@ -5,8 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Domain.Click;
 using NEXA.Domain.Grab;
+using NEXA.Domain.Lock;
 using NEXA.Domain.MonitorThrow;
 using NEXA.Domain.Scroll;
 using NEXA.Domain.TwoHand;
@@ -60,6 +62,7 @@ WindowGrabController windowGrabController = new(inputSink);
 TwoHandGestureController twoHandController = new(inputSink, screenshotSink);
 MonitorThrowController monitorThrowController = new(inputSink);
 VolumeController volumeController = new(audioSink);
+LockSequenceController lockController = new(inputSink);
 
 // Wire 3-second post-fist window trigger
 windowGrabController.OnFistReleased += () => twoHandController.Detector.NotifyFistReleased();
@@ -86,6 +89,8 @@ if (args.Length > 0 && args[0] == "--test")
     monitorThrowController.RenderFeedback(testFrame, results.FirstOrDefault());
     volumeController.Update(results.FirstOrDefault());
     volumeController.RenderFeedback(testFrame);
+    lockController.Update(results.FirstOrDefault());
+    lockController.RenderFeedback(testFrame, results.FirstOrDefault());
 
     // Automated Unit Test 1: WindowGrabDetector State-Machine Simulation
     Console.WriteLine("Testing WindowGrabDetector state machine transitions...");
@@ -213,7 +218,7 @@ if (args.Length > 0 && args[0] == "--test")
     (int? _, int? _, bool didClick) = testDwell.Update(pointHand, 1280, 720);
     if (!didClick) throw new Exception("DwellClick failed to trigger.");
 
-    // Automated Unit Test 7: Camera-Frame Screenshot (Dual "L" Hands + Double Touch Closure)
+    // Automated Unit Test 7: Camera-Frame Screenshot (Dual "L" Hands + 2.0s Hold)
     Console.WriteLine("Testing TwoHandGestureDetector (Camera-Frame Screenshot)...");
     TwoHandGestureDetector testScreenDetector = new();
 
@@ -287,6 +292,51 @@ if (args.Length > 0 && args[0] == "--test")
     if (!testPlayPauseDetector.State.IsMediaPlayPauseInCooldown)
         throw new Exception("Play/Pause cooldown failed to engage.");
 
+    // Automated Unit Test 9: PC Lock Sequence (🖐️ -> ✊ -> 🖐️ -> ✊)
+    Console.WriteLine("Testing LockSequenceDetector (4-Stage Security Lock)...");
+    LockSequenceDetector testLockDetector = new();
+    TrackedHand seqOpenHand = new() { Gesture = "Open Palm" };
+    seqOpenHand.SmoothedLandmarks2D[0] = new Point2f(500, 500);
+    seqOpenHand.SmoothedLandmarks2D[9] = new Point2f(500, 400);
+    seqOpenHand.SmoothedLandmarks2D[4] = new Point2f(470, 430);
+    seqOpenHand.SmoothedLandmarks2D[8] = new Point2f(490, 320);
+    seqOpenHand.SmoothedLandmarks2D[12] = new Point2f(510, 310);
+    seqOpenHand.SmoothedLandmarks2D[16] = new Point2f(530, 325);
+    seqOpenHand.SmoothedLandmarks2D[20] = new Point2f(545, 345);
+
+    TrackedHand seqFistHand = new() { Gesture = "Fist" };
+    seqFistHand.SmoothedLandmarks2D[0] = new Point2f(500, 500);
+    seqFistHand.SmoothedLandmarks2D[9] = new Point2f(500, 400);
+    seqFistHand.SmoothedLandmarks2D[4] = new Point2f(490, 430);
+    seqFistHand.SmoothedLandmarks2D[8] = new Point2f(500, 440);
+    seqFistHand.SmoothedLandmarks2D[12] = new Point2f(500, 440);
+    seqFistHand.SmoothedLandmarks2D[16] = new Point2f(500, 440);
+    seqFistHand.SmoothedLandmarks2D[20] = new Point2f(500, 440);
+
+    // Step 1: Open Palm 1
+    testLockDetector.Update(seqOpenHand);
+    testLockDetector.Update(seqOpenHand);
+    if (testLockDetector.State.CurrentStep != LockSequenceStep.OpenPalm1)
+        throw new Exception("Lock Step 1 (OpenPalm1) failed to engage.");
+
+    // Step 2: Fist 1
+    testLockDetector.Update(seqFistHand);
+    testLockDetector.Update(seqFistHand);
+    if (testLockDetector.State.CurrentStep != LockSequenceStep.Fist1)
+        throw new Exception("Lock Step 2 (Fist1) failed to engage.");
+
+    // Step 3: Open Palm 2
+    testLockDetector.Update(seqOpenHand);
+    testLockDetector.Update(seqOpenHand);
+    if (testLockDetector.State.CurrentStep != LockSequenceStep.OpenPalm2)
+        throw new Exception("Lock Step 3 (OpenPalm2) failed to engage.");
+
+    // Step 4: Fist 2 -> Trigger Lock!
+    testLockDetector.Update(seqFistHand);
+    bool didTriggerLock = testLockDetector.Update(seqFistHand);
+    if (!didTriggerLock || !testLockDetector.State.InCooldown)
+        throw new Exception("Lock Step 4 (Fist2) failed to trigger workstation lock.");
+
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -317,9 +367,10 @@ Console.WriteLine("  [ESC] / [Q] : Exit application");
 Console.WriteLine("  [C]         : Toggle Mouse Navigation & Dwell-Click");
 Console.WriteLine("  [W]         : Toggle Swipe Scrolling");
 Console.WriteLine("  [G]         : Toggle Real Window Grabbing & Pinch-Resizing");
-Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize/Screenshot)");
+Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize/Screenshot/PlayPause)");
 Console.WriteLine("  [M]         : Toggle Multi-Monitor Throw (Blade Swipe)");
 Console.WriteLine("  [V]         : Toggle Volume Control (L-Gesture Rotary Dial)");
+Console.WriteLine("  [L]         : Toggle PC Lock Gesture (Open-Fist-Open-Fist)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
 Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
 Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
@@ -364,7 +415,7 @@ while (true)
     // 4. Process Real Windows OS Window Grabbing, Moving & Two-Hand Pinch Resizing
     windowGrabController.Update(trackedHands, frame.Width, frame.Height);
 
-    // 5. Process Two-Hand Gestures (Maximize / Minimize / Camera-Frame Screenshot)
+    // 5. Process Two-Hand Gestures (Maximize / Minimize / Camera-Frame Screenshot / PlayPause)
     twoHandController.Update(trackedHands, frame.Width, frame.Height);
 
     // 6. Process Multi-Monitor Window Throw (Edge-On Blade Swipe)
@@ -373,34 +424,40 @@ while (true)
     // 7. Process System Master Volume Control (L-Gesture Rotary Dial)
     volumeController.Update(primaryHand);
 
-    // 8. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
+    // 8. Process 4-Stage Security PC Lock Sequence (🖐️ -> ✊ -> 🖐️ -> ✊)
+    lockController.Update(primaryHand);
+
+    // 9. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 9. Render Hand Skeleton Bones Overlay
+    // 10. Render Hand Skeleton Bones Overlay
     renderer.Render(frame, trackedHands);
 
-    // 10. Render Mouse Click Feedback & Dwell Ring
+    // 11. Render Mouse Click Feedback & Dwell Ring
     mouseController.RenderFeedback(frame, primaryHand);
 
-    // 11. Render Swipe Scroll Feedback Arrows
+    // 12. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 12. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
+    // 13. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
     windowGrabController.RenderFeedback(frame);
 
-    // 13. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
+    // 14. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
     twoHandController.RenderFeedback(frame, trackedHands);
 
-    // 14. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
+    // 15. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
     monitorThrowController.RenderFeedback(frame, primaryHand);
 
-    // 15. Render Holographic Rotary Volume Dial & Live Audio Gauge
+    // 16. Render Holographic Rotary Volume Dial & Live Audio Gauge
     volumeController.RenderFeedback(frame);
 
-    // 16. Render Virtual Test Target Object
+    // 17. Render 4-Stage Security PC Lock Sequence Badges & Alert
+    lockController.RenderFeedback(frame, primaryHand);
+
+    // 18. Render Virtual Test Target Object
     virtualObject.Render(frame);
 
-    // 17. Real-time FPS Calculation
+    // 19. Real-time FPS Calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -409,14 +466,14 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 18. Render Telemetry HUD
+    // 20. Render Telemetry HUD
     if (showHud)
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController, lockController);
     
-    // 19. Display Frame in OpenCV Window
+    // 21. Display Frame in OpenCV Window
     window.ShowImage(frame);
 
-    // 20. Handle Keyboard Hotkeys
+    // 22. Handle Keyboard Hotkeys
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
@@ -446,6 +503,10 @@ while (true)
     {
         volumeController.Enabled = !volumeController.Enabled;
     }
+    else if (key == 'l' || key == 'L')
+    {
+        lockController.Enabled = !lockController.Enabled;
+    }
     else if (key == 's' || key == 'S')
     {
         tracker.SmoothingEnabled = !tracker.SmoothingEnabled;
@@ -473,9 +534,9 @@ Console.WriteLine("Shutting down NEXA Hand Tracking...");
 /// <summary>
 /// Draws the semi-transparent telemetry HUD card with live FPS, filter states, and controller status indicators.
 /// </summary>
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl, LockSequenceController lockCtrl)
 {
-    Rect hudRect = new(10, 10, 390, 184);
+    Rect hudRect = new(10, 10, 390, 202);
     using Mat overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
@@ -632,8 +693,29 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Lautstaerke (V): {volStatus}"), new Point(20, 156),
         HersheyFonts.HersheySimplex, 0.36, volColor, 1, LineTypes.AntiAlias);
 
+    string lockStatus;
+    Scalar lockColor;
+    if (!lockCtrl.Enabled)
+    {
+        lockStatus = "AUS (Taste L)";
+        lockColor = new Scalar(160, 160, 160);
+    }
+    else if (lockCtrl.State.CurrentStep != LockSequenceStep.Idle)
+    {
+        lockStatus = $"Sequenz: {(int)lockCtrl.State.CurrentStep}/4 ({lockCtrl.State.StepTimeoutSeconds - lockCtrl.State.StepTimer.Elapsed.TotalSeconds:F1}s)";
+        lockColor = new Scalar(0, 220, 255);
+    }
+    else
+    {
+        lockStatus = "Bereit (Offen-Faust-Offen-Faust)";
+        lockColor = new Scalar(0, 255, 120);
+    }
+
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Sperren (L): {lockStatus}"), new Point(20, 174),
+        HersheyFonts.HersheySimplex, 0.36, lockColor, 1, LineTypes.AntiAlias);
+
     string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
     string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
-    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 174),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 192),
         HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }
