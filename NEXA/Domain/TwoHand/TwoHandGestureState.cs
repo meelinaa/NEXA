@@ -1,31 +1,30 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using OpenCvSharp;
 
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// State container tracking temporal windows, fingertip touch anchors, synchronous downward motions, and cooldowns for two-hand gestures.
+/// State container tracking temporal windows, fingertip touch anchors, synchronous downward motions, camera-framing viewfinder rectangles, and screenshot hold durations.
 /// <para>
 /// <b>What it is:</b> The state machine memory model for <see cref="TwoHandGestureDetector"/>.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="bullet">
-/// <item><description>Maintains a 3.0-second active window following a fist-grab release.</description></item>
-/// <item><description>Tracks index fingertip touch duration and initial anchor distances for Maximize gestures.</description></item>
-/// <item><description>Maintains a 300ms sliding queue of dual-hand coordinates to evaluate synchronous downward velocity for Minimize gestures.</description></item>
-/// <item><description>Enforces a 750ms refractory cooldown following any triggered action.</description></item>
+/// <item><description>Maintains a 3.0-second active window following a fist-grab release for window actions.</description></item>
+/// <item><description>Tracks live camera-frame bounding boxes spanned by dual "L" hands.</description></item>
+/// <item><description>Measures continuous double-touch hold duration (2.0s required) before triggering a screenshot.</description></item>
+/// <item><description>Enforces a 2.0-second directed cooldown blocking Maximize and consecutive screenshots.</description></item>
+/// <item><description>Enforces a 750ms refractory cooldown following any executed gesture.</description></item>
 /// </list>
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> Encapsulates multi-frame gesture tracking metrics and gating rules in a clean domain structure.
 /// </para>
 /// </summary>
 public class TwoHandGestureState
 {
     /// <summary>
-    /// Duration of the allowed interaction window (3.0 seconds) following a fist-grab release.
+    /// Duration of the allowed interaction window (3.0 seconds) following a fist-grab release for Maximize/Minimize gestures.
     /// </summary>
     public static readonly TimeSpan ActiveWindowDuration = TimeSpan.FromSeconds(3.0);
 
@@ -58,6 +57,63 @@ public class TwoHandGestureState
     /// Remaining active window duration in seconds.
     /// </summary>
     public double RemainingWindowSeconds => Math.Max(0.0, ActiveWindowDuration.TotalSeconds - (DateTime.Now - LastFistReleaseTime).TotalSeconds);
+
+    // --- Camera Frame Screenshot Tracking ---
+
+    /// <summary>
+    /// Gets or sets a value indicating whether both hands are simultaneously forming an "L" posture.
+    /// </summary>
+    public bool IsCameraFrameActive { get; set; } = false;
+
+    /// <summary>
+    /// The live 2D camera coordinates bounding rectangle spanned by all 4 extended fingertips (Thumb 1, Index 1, Thumb 2, Index 2).
+    /// </summary>
+    public Rect2f LiveCameraFrameRect { get; set; }
+
+    /// <summary>
+    /// Dedicated stopwatch tracking continuous double-touch hold duration before triggering a screenshot.
+    /// </summary>
+    public Stopwatch ScreenshotHoldTimer { get; } = new();
+
+    /// <summary>
+    /// The required double-touch hold duration in seconds (2.0s) before executing a screenshot.
+    /// </summary>
+    public double RequiredScreenshotHoldSeconds { get; set; } = 2.0;
+
+    /// <summary>
+    /// Elapsed double-touch hold duration in seconds.
+    /// </summary>
+    public double ScreenshotHoldDurationSeconds { get; set; } = 0.0;
+
+    /// <summary>
+    /// Normalized hold progress from 0.0 to 1.0.
+    /// </summary>
+    public double ScreenshotHoldProgress { get; set; } = 0.0;
+
+    /// <summary>
+    /// Dedicated stopwatch enforcing a 2.0-second cooldown blocking Maximize and consecutive screenshots immediately following a trigger.
+    /// </summary>
+    public Stopwatch ScreenshotBlockTimer { get; } = new();
+
+    /// <summary>
+    /// Indicates whether screenshot actions are currently suppressed by a recent screenshot trigger.
+    /// </summary>
+    public bool IsScreenshotBlocked => ScreenshotBlockTimer.IsRunning && ScreenshotBlockTimer.Elapsed.TotalSeconds < 2.0;
+
+    /// <summary>
+    /// Timestamp of the most recently captured screenshot for AR flash rendering.
+    /// </summary>
+    public DateTime LastScreenshotTime { get; set; } = DateTime.MinValue;
+
+    /// <summary>
+    /// 2D camera coordinates rectangle of the most recently captured screenshot.
+    /// </summary>
+    public Rect2f LastCapturedFrameRect { get; set; }
+
+    /// <summary>
+    /// Absolute file system path of the most recently saved screenshot file.
+    /// </summary>
+    public string LastSavedFilePath { get; set; } = string.Empty;
 
     // --- Maximize Touch Tracking ---
 
@@ -101,7 +157,7 @@ public class TwoHandGestureState
     // --- Visual Feedback & Telemetry ---
 
     /// <summary>
-    /// Action label ("MAXIMIZE" or "MINIMIZE") of the most recently executed gesture.
+    /// Action label ("MAXIMIZE", "MINIMIZE", or "SCREENSHOT") of the most recently executed gesture.
     /// </summary>
     public string LastAction { get; set; } = string.Empty;
 

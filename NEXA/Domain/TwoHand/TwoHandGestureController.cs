@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using NEXA.Adapters.Output;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -7,16 +8,16 @@ using OpenCvSharp;
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// Application adapter orchestrating two-hand Maximize/Minimize window operations and augmented reality HUD rendering.
+/// Application adapter orchestrating two-hand Maximize/Minimize window operations, Camera-Frame Screenshot capture, and augmented reality HUD rendering.
 /// <para>
-/// <b>What it is:</b> The controller executing multi-hand window state transitions.
+/// <b>What it is:</b> The controller executing multi-hand window state transitions and screen region captures.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="bullet">
 /// <item><description>Passes dual tracked hands into <see cref="TwoHandGestureDetector"/>.</description></item>
-/// <item><description>Dispatches <see cref="IInputSink.MaximizeWindow"/> or <see cref="IInputSink.MinimizeWindow"/> based on gesture decisions.</description></item>
-/// <item><description>Renders AR visual cues: active window countdown banner, fingertip touch link lines, and floating expansion/downward action arrows.</description></item>
+/// <item><description>Dispatches <see cref="IInputSink.MaximizeWindow"/>, <see cref="IInputSink.MinimizeWindow"/>, or <see cref="IScreenshotSink.CaptureScreenRegion"/>.</description></item>
+/// <item><description>Renders AR visual cues: active window countdown banner, viewfinder framing corner brackets, and white flash ripple animations.</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -28,7 +29,12 @@ public class TwoHandGestureController
     private readonly IInputSink _inputSink;
 
     /// <summary>
-    /// The core domain detector evaluating Maximize and Minimize gestures.
+    /// The screenshot sink used to capture desktop regions and copy/save bitmaps.
+    /// </summary>
+    private readonly IScreenshotSink _screenshotSink;
+
+    /// <summary>
+    /// The core domain detector evaluating Maximize, Minimize, and Screenshot gestures.
     /// </summary>
     public TwoHandGestureDetector Detector { get; }
 
@@ -47,20 +53,46 @@ public class TwoHandGestureController
     public TwoHandGestureState State => Detector.State;
 
     /// <summary>
+    /// Gets or sets the target output directory for saving screenshot PNG files.
+    /// </summary>
+    public string OutputDirectory { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+        "NEXA-Screenshots"
+    );
+
+    /// <summary>
+    /// Primary desktop display width in pixels.
+    /// </summary>
+    private readonly int _screenWidth;
+
+    /// <summary>
+    /// Primary desktop display height in pixels.
+    /// </summary>
+    private readonly int _screenHeight;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="TwoHandGestureController"/> class.
     /// </summary>
     /// <param name="inputSink">The output adapter for OS inputs.</param>
-    public TwoHandGestureController(IInputSink? inputSink = null)
+    /// <param name="screenshotSink">The output adapter for desktop screen capture.</param>
+    public TwoHandGestureController(IInputSink? inputSink = null, IScreenshotSink? screenshotSink = null)
     {
         _inputSink = inputSink ?? new Win32InputSink();
+        _screenshotSink = screenshotSink ?? new Win32ScreenshotSink();
         Detector = new TwoHandGestureDetector();
+
+        (int w, int h) = _inputSink.GetScreenResolution();
+        _screenWidth = w > 0 ? w : 1920;
+        _screenHeight = h > 0 ? h : 1080;
     }
 
     /// <summary>
-    /// Evaluates tracked hands for the current frame and executes window maximize/minimize commands.
+    /// Evaluates tracked hands for the current frame and executes window commands or captures screenshots.
     /// </summary>
     /// <param name="hands">The list of active tracked hands.</param>
-    public void Update(List<TrackedHand>? hands)
+    /// <param name="frameWidth">Camera frame width in pixels.</param>
+    /// <param name="frameHeight">Camera frame height in pixels.</param>
+    public void Update(List<TrackedHand>? hands, int frameWidth = 1280, int frameHeight = 720)
     {
         TwoHandGestureDecision? decision = Detector.Update(hands, _inputSink);
         if (decision != null)
@@ -73,11 +105,17 @@ public class TwoHandGestureController
             {
                 _inputSink.MinimizeWindow(decision.TargetHwnd);
             }
+            else if (decision.Action == TwoHandAction.Screenshot)
+            {
+                // Capture full primary desktop screen
+                _screenshotSink.CaptureScreenRegion(0, 0, _screenWidth, _screenHeight, OutputDirectory, out string savedFilePath);
+                State.LastSavedFilePath = savedFilePath;
+            }
         }
     }
 
     /// <summary>
-    /// Renders visual feedback (3.0s window countdown badge, touch link lines, and action animations) onto the camera frame.
+    /// Renders visual feedback (3.0s window countdown badge, camera viewfinder brackets, white flash, and action animations) onto the camera frame.
     /// </summary>
     /// <param name="frame">The camera image frame to draw on.</param>
     /// <param name="hands">The list of active tracked hands.</param>
@@ -85,7 +123,94 @@ public class TwoHandGestureController
     {
         DateTime now = DateTime.Now;
 
-        // 1. Active 3.0s Window Status Banner (Top Center)
+        // 1. Live Camera-Frame Viewfinder Bounding Box (Spanned by dual "L" hands)
+        if (State.IsCameraFrameActive && State.LiveCameraFrameRect.Width > 0 && State.LiveCameraFrameRect.Height > 0)
+        {
+            Rect box = new(
+                Math.Clamp((int)Math.Round(State.LiveCameraFrameRect.X), 2, frame.Width - 10),
+                Math.Clamp((int)Math.Round(State.LiveCameraFrameRect.Y), 2, frame.Height - 10),
+                Math.Clamp((int)Math.Round(State.LiveCameraFrameRect.Width), 20, frame.Width - 4),
+                Math.Clamp((int)Math.Round(State.LiveCameraFrameRect.Height), 20, frame.Height - 4)
+            );
+
+            Scalar frameColor = new(0, 255, 120); // Neon Green
+            int cornerLen = Math.Min(30, Math.Min(box.Width / 4, box.Height / 4));
+
+            // Translucent dark fill
+            using (Mat overlay = frame.Clone())
+            {
+                Cv2.Rectangle(overlay, box, new Scalar(20, 30, 20), -1);
+                Cv2.AddWeighted(overlay, 0.25, frame, 0.75, 0, frame);
+            }
+
+            // Outer border
+            Cv2.Rectangle(frame, box, frameColor, 1, LineTypes.AntiAlias);
+
+            // 4 Viewfinder Corner Brackets
+            Cv2.Line(frame, new Point(box.Left, box.Top), new Point(box.Left + cornerLen, box.Top), frameColor, 3);
+            Cv2.Line(frame, new Point(box.Left, box.Top), new Point(box.Left, box.Top + cornerLen), frameColor, 3);
+
+            Cv2.Line(frame, new Point(box.Right, box.Top), new Point(box.Right - cornerLen, box.Top), frameColor, 3);
+            Cv2.Line(frame, new Point(box.Right, box.Top), new Point(box.Right, box.Top + cornerLen), frameColor, 3);
+
+            Cv2.Line(frame, new Point(box.Left, box.Bottom), new Point(box.Left + cornerLen, box.Bottom), frameColor, 3);
+            Cv2.Line(frame, new Point(box.Left, box.Bottom), new Point(box.Left, box.Bottom - cornerLen), frameColor, 3);
+
+            Cv2.Line(frame, new Point(box.Right, box.Bottom), new Point(box.Right - cornerLen, box.Bottom), frameColor, 3);
+            Cv2.Line(frame, new Point(box.Right, box.Bottom), new Point(box.Right, box.Bottom - cornerLen), frameColor, 3);
+
+            // Center crosshair
+            Point centerPt = new(box.Left + box.Width / 2, box.Top + box.Height / 2);
+            Cv2.Line(frame, new Point(centerPt.X - 10, centerPt.Y), new Point(centerPt.X + 10, centerPt.Y), frameColor, 1);
+            Cv2.Line(frame, new Point(centerPt.X, centerPt.Y - 10), new Point(centerPt.X, centerPt.Y + 10), frameColor, 1);
+
+            string tagText;
+            Scalar tagColor;
+
+            if (State.ScreenshotHoldProgress > 0.01)
+            {
+                double remaining = Math.Max(0.0, State.RequiredScreenshotHoldSeconds - State.ScreenshotHoldDurationSeconds);
+                tagText = $"[HALTE: {remaining:F1}s ({(int)(State.ScreenshotHoldProgress * 100)}%)]";
+                tagColor = new Scalar(0, 220, 255); // Cyan
+
+                // Center charging radial arc
+                int arcAngle = (int)(State.ScreenshotHoldProgress * 360);
+                Cv2.Ellipse(frame, centerPt, new Size(24, 24), -90, 0, arcAngle, tagColor, 3, LineTypes.AntiAlias);
+            }
+            else
+            {
+                tagText = "[KAMERA-RAHMEN: FINGER 2s ZUSAMMENHALTEN]";
+                tagColor = frameColor;
+            }
+
+            Cv2.PutText(frame, tagText, new Point(Math.Max(10, box.Left + 6), Math.Max(25, box.Top - 8)),
+                HersheyFonts.HersheySimplex, 0.40, tagColor, 1, LineTypes.AntiAlias);
+        }
+
+        // 2. White Flash Overlay Animation (~220ms on screenshot trigger)
+        double elapsedFlash = (now - State.LastScreenshotTime).TotalMilliseconds;
+        if (elapsedFlash < 220 && State.LastCapturedFrameRect.Width > 0)
+        {
+            Rect flashBox = new(
+                Math.Clamp((int)Math.Round(State.LastCapturedFrameRect.X), 2, frame.Width - 10),
+                Math.Clamp((int)Math.Round(State.LastCapturedFrameRect.Y), 2, frame.Height - 10),
+                Math.Clamp((int)Math.Round(State.LastCapturedFrameRect.Width), 20, frame.Width - 4),
+                Math.Clamp((int)Math.Round(State.LastCapturedFrameRect.Height), 20, frame.Height - 4)
+            );
+
+            double alpha = Math.Clamp(1.0 - (elapsedFlash / 220.0), 0.0, 1.0) * 0.70;
+            using (Mat flashOverlay = frame.Clone())
+            {
+                Cv2.Rectangle(flashOverlay, flashBox, new Scalar(255, 255, 255), -1);
+                Cv2.AddWeighted(flashOverlay, alpha, frame, 1.0 - alpha, 0, frame);
+            }
+
+            Cv2.Rectangle(frame, flashBox, new Scalar(255, 255, 255), 2, LineTypes.AntiAlias);
+            Cv2.PutText(frame, "* SCREENSHOT SAVED & COPIED *", new Point(flashBox.Left + 10, flashBox.Top + flashBox.Height / 2),
+                HersheyFonts.HersheySimplex, 0.52, new Scalar(0, 255, 255), 2, LineTypes.AntiAlias);
+        }
+
+        // 3. Active 3.0s Window Status Banner (Top Center)
         if (State.IsWindowActive && _inputSink.LastFocusedHwnd != IntPtr.Zero)
         {
             string winTitle = _inputSink.LastFocusedTitle.Length > 20
@@ -98,58 +223,66 @@ public class TwoHandGestureController
             int bannerX = Math.Max(10, (frame.Width - textSize.Width) / 2);
             Rect bannerRect = new(bannerX - 10, 12, textSize.Width + 20, textSize.Height + 14);
 
-            Cv2.Rectangle(frame, bannerRect, new Scalar(15, 20, 30), -1);
-            Cv2.Rectangle(frame, bannerRect, new Scalar(0, 255, 120), 1);
-            Cv2.PutText(frame, bannerText, new Point(bannerX, 12 + textSize.Height + 4),
+            using (Mat bannerMat = frame.Clone())
+            {
+                Cv2.Rectangle(bannerMat, bannerRect, new Scalar(20, 20, 30), -1);
+                Cv2.AddWeighted(bannerMat, 0.75, frame, 0.25, 0, frame);
+            }
+
+            Cv2.Rectangle(frame, bannerRect, new Scalar(0, 255, 120), 1, LineTypes.AntiAlias);
+            Cv2.PutText(frame, bannerText, new Point(bannerX, 28),
                 HersheyFonts.HersheySimplex, 0.44, new Scalar(0, 255, 120), 1, LineTypes.AntiAlias);
         }
 
-        // 2. Touch Link Line between Index Fingertips (during Maximize initiation)
-        if (hands != null && hands.Count == 2 && State.IsTouchActive)
+        // 4. Touch Link Line (Maximize Gesture Indicator)
+        if (State.IsTouchActive)
         {
-            Point p1 = new((int)hands[0].SmoothedLandmarks2D[8].X, (int)hands[0].SmoothedLandmarks2D[8].Y);
-            Point p2 = new((int)hands[1].SmoothedLandmarks2D[8].X, (int)hands[1].SmoothedLandmarks2D[8].Y);
+            Point p1 = new((int)State.TouchPoint1.X, (int)State.TouchPoint1.Y);
+            Point p2 = new((int)State.TouchPoint2.X, (int)State.TouchPoint2.Y);
 
-            // Glowing cyan link line
             Cv2.Line(frame, p1, p2, new Scalar(0, 220, 255), 2, LineTypes.AntiAlias);
-            Cv2.Circle(frame, p1, 7, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
-            Cv2.Circle(frame, p2, 7, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
+            Cv2.Circle(frame, p1, 6, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
+            Cv2.Circle(frame, p2, 6, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
+
+            Point midPt = new((p1.X + p2.X) / 2, (p1.Y + p2.Y) / 2);
+            Cv2.PutText(frame, "SPREAD APART TO MAXIMIZE", new Point(midPt.X - 80, midPt.Y - 14),
+                HersheyFonts.HersheySimplex, 0.38, new Scalar(0, 220, 255), 1, LineTypes.AntiAlias);
         }
 
-        // 3. Floating Trigger Animation (Maximize Expansion or Minimize Downward Arrows)
+        // 5. Trigger Flash & Action Animation Banner
         double elapsedFeedback = (now - State.LastFeedbackTime).TotalMilliseconds;
-        if (elapsedFeedback < 650.0)
+        if (elapsedFeedback < 900 && !string.IsNullOrEmpty(State.LastAction))
         {
-            float progress = (float)(elapsedFeedback / 650.0);
-            int cx = (int)State.LastFeedbackCenter.X;
-            int cy = (int)State.LastFeedbackCenter.Y;
+            float progress = (float)(elapsedFeedback / 900.0);
+            int animRadius = (int)(20 + progress * 50);
+            Point center = new((int)State.LastFeedbackCenter.X, (int)State.LastFeedbackCenter.Y);
 
-            if (State.LastAction == "MAXIMIZE")
-            {
-                int spread = (int)(progress * 60);
-                Scalar color = new(0, 255, 120); // Neon Green
+            Scalar actionColor = State.LastAction == "MAXIMIZE"
+                ? new Scalar(0, 255, 120) // Green
+                : (State.LastAction == "SCREENSHOT" ? new Scalar(255, 255, 255) : new Scalar(0, 100, 255)); // Red
 
-                string maxText = "<-- MAXIMIZE -->";
-                Cv2.PutText(frame, maxText, new Point(Math.Max(10, cx - 80), Math.Max(30, cy)),
-                    HersheyFonts.HersheySimplex, 0.65, color, 2, LineTypes.AntiAlias);
+            Cv2.Circle(frame, center, animRadius, actionColor, 2, LineTypes.AntiAlias);
 
-                // Expanding horizontal arrows
-                Cv2.ArrowedLine(frame, new Point(cx, cy + 15), new Point(cx - spread - 20, cy + 15), color, 2);
-                Cv2.ArrowedLine(frame, new Point(cx, cy + 15), new Point(cx + spread + 20, cy + 15), color, 2);
-            }
-            else if (State.LastAction == "MINIMIZE")
-            {
-                int drop = (int)(progress * 45);
-                Scalar color = new(0, 165, 255); // Amber
-
-                string minText = "v v MINIMIZE v v";
-                Cv2.PutText(frame, minText, new Point(Math.Max(10, cx - 80), Math.Max(30, cy + drop)),
-                    HersheyFonts.HersheySimplex, 0.65, color, 2, LineTypes.AntiAlias);
-
-                // Downward drop arrows
-                Cv2.ArrowedLine(frame, new Point(cx - 30, cy + drop), new Point(cx - 30, cy + drop + 30), color, 2);
-                Cv2.ArrowedLine(frame, new Point(cx + 30, cy + drop), new Point(cx + 30, cy + drop + 30), color, 2);
-            }
+            string actionLabel = $"* {State.LastAction} *";
+            Cv2.PutText(frame, actionLabel, new Point(center.X - 50, center.Y - animRadius - 8),
+                HersheyFonts.HersheySimplex, 0.60, actionColor, 2, LineTypes.AntiAlias);
         }
+    }
+
+    /// <summary>
+    /// Maps 2D camera coordinates into desktop screen coordinates with 15% comfort margins.
+    /// </summary>
+    private (double screenX, double screenY) MapToScreen(float x, float y, int frameWidth, int frameHeight)
+    {
+        float marginX = frameWidth * 0.15f;
+        float marginY = frameHeight * 0.15f;
+
+        float normX = Math.Clamp((x - marginX) / (frameWidth - 2 * marginX), 0.0f, 1.0f);
+        float normY = Math.Clamp((y - marginY) / (frameHeight - 2 * marginY), 0.0f, 1.0f);
+
+        double screenX = normX * _screenWidth;
+        double screenY = normY * _screenHeight;
+
+        return (screenX, screenY);
     }
 }

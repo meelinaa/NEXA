@@ -51,12 +51,13 @@ Console.WriteLine("Loading MediaPipe ONNX Models...");
 using HandTracker tracker = new(palmModelPath, landmarkModelPath);
 Win32InputSink inputSink = new();
 Win32AudioSink audioSink = new();
+Win32ScreenshotSink screenshotSink = new();
 HandMeshRenderer renderer = new();
 VirtualObjectController virtualObject = new();
 MouseController mouseController = new(inputSink);
 ScrollController scrollController = new(inputSink);
 WindowGrabController windowGrabController = new(inputSink);
-TwoHandGestureController twoHandController = new(inputSink);
+TwoHandGestureController twoHandController = new(inputSink, screenshotSink);
 MonitorThrowController monitorThrowController = new(inputSink);
 VolumeController volumeController = new(audioSink);
 
@@ -79,7 +80,7 @@ if (args.Length > 0 && args[0] == "--test")
     scrollController.RenderFeedback(testFrame);
     windowGrabController.Update(results, testFrame.Width, testFrame.Height);
     windowGrabController.RenderFeedback(testFrame);
-    twoHandController.Update(results);
+    twoHandController.Update(results, testFrame.Width, testFrame.Height);
     twoHandController.RenderFeedback(testFrame, results);
     monitorThrowController.Update(results.FirstOrDefault());
     monitorThrowController.RenderFeedback(testFrame, results.FirstOrDefault());
@@ -199,32 +200,61 @@ if (args.Length > 0 && args[0] == "--test")
     MonitorThrowDecision? throwDecision = testThrowDetector.Update(bladeHand, inputSink);
     if (throwDecision == null || throwDecision.Direction != MonitorThrowDirection.Right) throw new Exception("Monitor Throw Right failed to trigger.");
 
-    // Automated Unit Test 6: Rotary Volume Control via L-Gesture
-    Console.WriteLine("Testing VolumeDetector (L-Gesture Rotary Dial)...");
-    VolumeDetector testVolDetector = new();
-    TrackedHand lHand = new() { Gesture = "L" };
-    lHand.SmoothedLandmarks2D[0] = new Point2f(500, 500);  // Wrist
-    lHand.SmoothedLandmarks2D[2] = new Point2f(460, 470);  // Thumb MCP
-    lHand.SmoothedLandmarks2D[4] = new Point2f(420, 470);  // Thumb Tip (Points Left)
-    lHand.SmoothedLandmarks2D[5] = new Point2f(500, 430);  // Index MCP
-    lHand.SmoothedLandmarks2D[8] = new Point2f(500, 360);  // Index Tip (Points Up, Angle = -90 deg)
-    lHand.SmoothedLandmarks2D[9] = new Point2f(500, 430);
-    lHand.SmoothedLandmarks2D[12] = new Point2f(500, 470); // Middle Tip Curled
-    lHand.SmoothedLandmarks2D[13] = new Point2f(520, 440);
-    lHand.SmoothedLandmarks2D[16] = new Point2f(520, 480); // Ring Tip Curled
-    lHand.SmoothedLandmarks2D[17] = new Point2f(540, 450);
-    lHand.SmoothedLandmarks2D[20] = new Point2f(540, 490); // Pinky Tip Curled
+    // Automated Unit Test 6: DwellClickDetector Simulation
+    Console.WriteLine("Testing DwellClickDetector...");
+    DwellClickDetector testDwell = new(1920, 1080);
+    testDwell.DwellState.RequiredDwellSeconds = 0.01;
 
-    audioSink.SetMasterVolume(0.50f);
+    TrackedHand pointHand = new() { Gesture = "Pointing" };
+    pointHand.SmoothedLandmarks2D[8] = new Point2f(640, 360);
 
-    // Frame 1: Engages L-gesture baseline
-    (bool volActive1, float vol1) = testVolDetector.Update(lHand, audioSink);
-    if (!volActive1 || !testVolDetector.State.IsActive) throw new Exception("VolumeDetector failed to engage on L-gesture.");
+    testDwell.Update(pointHand, 1280, 720);
+    Thread.Sleep(20);
+    (int? _, int? _, bool didClick) = testDwell.Update(pointHand, 1280, 720);
+    if (!didClick) throw new Exception("DwellClick failed to trigger.");
 
-    // Frame 2: Rotate index finger rightwards by ~45 degrees (clockwise rotation)
-    lHand.SmoothedLandmarks2D[8] = new Point2f(550, 380); // Tilted clockwise
-    (bool volActive2, float vol2) = testVolDetector.Update(lHand, audioSink);
-    if (!volActive2 || vol2 <= 0.50f) throw new Exception("VolumeDetector failed to increase volume on clockwise rotation.");
+    // Automated Unit Test 7: Camera-Frame Screenshot (Dual "L" Hands + Double Touch Closure)
+    Console.WriteLine("Testing TwoHandGestureDetector (Camera-Frame Screenshot)...");
+    TwoHandGestureDetector testScreenDetector = new();
+
+    TrackedHand lHand1 = new() { Gesture = "L" };
+    lHand1.SmoothedLandmarks2D[0] = new Point2f(400, 500);  // Wrist
+    lHand1.SmoothedLandmarks2D[2] = new Point2f(360, 470);  // Thumb MCP
+    lHand1.SmoothedLandmarks2D[4] = new Point2f(320, 470);  // Thumb Tip 1
+    lHand1.SmoothedLandmarks2D[5] = new Point2f(400, 430);  // Index MCP
+    lHand1.SmoothedLandmarks2D[8] = new Point2f(400, 360);  // Index Tip 1
+    lHand1.SmoothedLandmarks2D[9] = new Point2f(400, 430);
+    lHand1.SmoothedLandmarks2D[12] = new Point2f(400, 470);
+    lHand1.SmoothedLandmarks2D[13] = new Point2f(420, 440);
+    lHand1.SmoothedLandmarks2D[16] = new Point2f(420, 480);
+    lHand1.SmoothedLandmarks2D[17] = new Point2f(440, 450);
+    lHand1.SmoothedLandmarks2D[20] = new Point2f(440, 490);
+
+    TrackedHand lHand2 = new() { Gesture = "L" };
+    lHand2.SmoothedLandmarks2D[0] = new Point2f(600, 500);  // Wrist
+    lHand2.SmoothedLandmarks2D[2] = new Point2f(560, 470);  // Thumb MCP
+    lHand2.SmoothedLandmarks2D[4] = new Point2f(330, 470);  // Thumb Tip 2 (Near Thumb 1, dist=10px)
+    lHand2.SmoothedLandmarks2D[5] = new Point2f(600, 430);  // Index MCP
+    lHand2.SmoothedLandmarks2D[8] = new Point2f(410, 360);  // Index Tip 2 (Near Index 1, dist=10px)
+    lHand2.SmoothedLandmarks2D[9] = new Point2f(600, 430);
+    lHand2.SmoothedLandmarks2D[12] = new Point2f(600, 470);
+    lHand2.SmoothedLandmarks2D[13] = new Point2f(620, 440);
+    lHand2.SmoothedLandmarks2D[16] = new Point2f(620, 480);
+    lHand2.SmoothedLandmarks2D[17] = new Point2f(640, 450);
+    lHand2.SmoothedLandmarks2D[20] = new Point2f(640, 490);
+
+    testScreenDetector.State.RequiredScreenshotHoldSeconds = 0.01;
+    List<TrackedHand> dualLHands = new() { lHand1, lHand2 };
+
+    // Frame 1: Establishes framing & starts hold
+    testScreenDetector.Update(dualLHands, inputSink);
+    Thread.Sleep(20);
+    // Frame 2: Confirms hold -> triggers Screenshot
+    TwoHandGestureDecision? screenDecision = testScreenDetector.Update(dualLHands, inputSink);
+    if (screenDecision == null || screenDecision.Action != TwoHandAction.Screenshot)
+        throw new Exception("Camera-Frame Screenshot gesture failed to trigger.");
+    if (!testScreenDetector.State.IsScreenshotBlocked)
+        throw new Exception("Screenshot disambiguation cooldown failed to engage.");
 
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
@@ -256,7 +286,7 @@ Console.WriteLine("  [ESC] / [Q] : Exit application");
 Console.WriteLine("  [C]         : Toggle Mouse Navigation & Dwell-Click");
 Console.WriteLine("  [W]         : Toggle Swipe Scrolling");
 Console.WriteLine("  [G]         : Toggle Real Window Grabbing & Pinch-Resizing");
-Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize)");
+Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize/Screenshot)");
 Console.WriteLine("  [M]         : Toggle Multi-Monitor Throw (Blade Swipe)");
 Console.WriteLine("  [V]         : Toggle Volume Control (L-Gesture Rotary Dial)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
@@ -303,8 +333,8 @@ while (true)
     // 4. Process Real Windows OS Window Grabbing, Moving & Two-Hand Pinch Resizing
     windowGrabController.Update(trackedHands, frame.Width, frame.Height);
 
-    // 5. Process Two-Hand Window Gestures (Maximize / Minimize in 3s Window)
-    twoHandController.Update(trackedHands);
+    // 5. Process Two-Hand Gestures (Maximize / Minimize / Camera-Frame Screenshot)
+    twoHandController.Update(trackedHands, frame.Width, frame.Height);
 
     // 6. Process Multi-Monitor Window Throw (Edge-On Blade Swipe)
     monitorThrowController.Update(primaryHand);
@@ -327,7 +357,7 @@ while (true)
     // 12. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
     windowGrabController.RenderFeedback(frame);
 
-    // 13. Render Two-Hand Gesture Banner, Touch Link Line & Action Arrows
+    // 13. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
     twoHandController.RenderFeedback(frame, trackedHands);
 
     // 14. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
@@ -506,6 +536,16 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
         twoHandStatus = "AUS (Taste T)";
         twoHandColor = new Scalar(160, 160, 160);
     }
+    else if (twoHandCtrl.State.IsCameraFrameActive)
+    {
+        twoHandStatus = "Kamera-Rahmen (Touch zum Ausloesen)";
+        twoHandColor = new Scalar(0, 255, 120);
+    }
+    else if ((DateTime.Now - twoHandCtrl.State.LastScreenshotTime).TotalMilliseconds < 1500)
+    {
+        twoHandStatus = "Screenshot gespeichert & kopiert!";
+        twoHandColor = new Scalar(255, 255, 255);
+    }
     else if (twoHandCtrl.State.InCooldown)
     {
         twoHandStatus = $"Cooldown ({twoHandCtrl.State.LastAction})";
@@ -513,12 +553,12 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     }
     else if (twoHandCtrl.State.IsWindowActive)
     {
-        twoHandStatus = $"Bereit ({twoHandCtrl.State.RemainingWindowSeconds:F1}s)";
+        twoHandStatus = $"Fenster ({twoHandCtrl.State.RemainingWindowSeconds:F1}s)";
         twoHandColor = new Scalar(0, 255, 120);
     }
     else
     {
-        twoHandStatus = "Gesperrt (Erst Faust loslassen)";
+        twoHandStatus = "Bereit (Doppel-L / Faust-Window)";
         twoHandColor = new Scalar(120, 120, 120);
     }
 

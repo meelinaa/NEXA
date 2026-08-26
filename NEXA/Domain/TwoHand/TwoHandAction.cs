@@ -1,12 +1,9 @@
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// Enumeration of distinct window manipulation actions triggered by two-hand gestures.
+/// Enumeration of distinct window manipulation and desktop capture actions triggered by two-hand gestures.
 /// <para>
-/// <b>What it is:</b> A domain enum representing discrete window operations.
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> Provides strongly-typed gesture command identifiers.
+/// <b>What it is:</b> A domain enum representing discrete multi-hand operations.
 /// </para>
 /// </summary>
 public enum TwoHandAction
@@ -24,5 +21,10 @@ public enum TwoHandAction
     /// <summary>
     /// Restores the window to its normal geometry.
     /// </summary>
-    Restore
+    Restore,
+
+    /// <summary>
+    /// Captures the screen region framed by two "L"-shaped hands upon double touch closure.
+    /// </summary>
+    Screenshot
 }
