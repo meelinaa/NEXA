@@ -49,6 +49,16 @@ public interface IInputSink
     void LockWorkstation();
 
     /// <summary>
+    /// Injects an Undo shortcut into the active application (Ctrl + Z).
+    /// </summary>
+    void SendUndo();
+
+    /// <summary>
+    /// Injects a Redo shortcut into the active application (Ctrl + Y).
+    /// </summary>
+    void SendRedo();
+
+    /// <summary>
     /// Relocates a native OS window to the specified desktop coordinates without altering its size or Z-order.
     /// </summary>
     /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>

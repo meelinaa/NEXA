@@ -193,6 +193,24 @@ public class Win32InputSink : IInputSink
     }
 
     /// <inheritdoc/>
+    public void SendUndo()
+    {
+        keybd_event(0x11, 0, 0, UIntPtr.Zero); // VK_CONTROL down
+        keybd_event(0x5A, 0, 0, UIntPtr.Zero); // 'Z' down
+        keybd_event(0x5A, 0, 0x0002, UIntPtr.Zero); // 'Z' up
+        keybd_event(0x11, 0, 0x0002, UIntPtr.Zero); // VK_CONTROL up
+    }
+
+    /// <inheritdoc/>
+    public void SendRedo()
+    {
+        keybd_event(0x11, 0, 0, UIntPtr.Zero); // VK_CONTROL down
+        keybd_event(0x59, 0, 0, UIntPtr.Zero); // 'Y' down
+        keybd_event(0x59, 0, 0x0002, UIntPtr.Zero); // 'Y' up
+        keybd_event(0x11, 0, 0x0002, UIntPtr.Zero); // VK_CONTROL up
+    }
+
+    /// <inheritdoc/>
     public void Scroll(int wheelDelta)
     {
         INPUT[] inputs = new INPUT[]

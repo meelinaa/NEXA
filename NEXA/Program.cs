@@ -12,6 +12,7 @@ using NEXA.Domain.Lock;
 using NEXA.Domain.MonitorThrow;
 using NEXA.Domain.Scroll;
 using NEXA.Domain.TwoHand;
+using NEXA.Domain.Undo;
 using NEXA.Domain.Volume;
 using NEXA.Hand;
 using NEXA.Object;
@@ -63,6 +64,7 @@ TwoHandGestureController twoHandController = new(inputSink, screenshotSink);
 MonitorThrowController monitorThrowController = new(inputSink);
 VolumeController volumeController = new(audioSink);
 LockSequenceController lockController = new(inputSink);
+CircleUndoController circleUndoController = new(inputSink);
 
 // Wire 3-second post-fist window trigger
 windowGrabController.OnFistReleased += () => twoHandController.Detector.NotifyFistReleased();
@@ -91,6 +93,8 @@ if (args.Length > 0 && args[0] == "--test")
     volumeController.RenderFeedback(testFrame);
     lockController.Update(results.FirstOrDefault());
     lockController.RenderFeedback(testFrame, results.FirstOrDefault());
+    circleUndoController.Update(results.FirstOrDefault());
+    circleUndoController.RenderFeedback(testFrame, results.FirstOrDefault());
 
     // Automated Unit Test 1: WindowGrabDetector State-Machine Simulation
     Console.WriteLine("Testing WindowGrabDetector state machine transitions...");
@@ -337,6 +341,41 @@ if (args.Length > 0 && args[0] == "--test")
     if (!didTriggerLock || !testLockDetector.State.InCooldown)
         throw new Exception("Lock Step 4 (Fist2) failed to trigger workstation lock.");
 
+    // Automated Unit Test 10: Wrist-Twist Peace Sign (Undo / Redo)
+    Console.WriteLine("Testing CircleUndoDetector (Peace Wrist-Twist Undo & Redo)...");
+    CircleUndoDetector testUndoDetector = new();
+
+    TrackedHand peaceHand = new() { Gesture = "Peace" };
+    peaceHand.SmoothedLandmarks2D[0] = new Point2f(500, 500); // Wrist
+    peaceHand.SmoothedLandmarks2D[4] = new Point2f(470, 430); // Thumb curled
+    peaceHand.SmoothedLandmarks2D[5] = new Point2f(480, 420);
+    peaceHand.SmoothedLandmarks2D[9] = new Point2f(500, 400); // Palm
+    peaceHand.SmoothedLandmarks2D[13] = new Point2f(520, 420);
+    peaceHand.SmoothedLandmarks2D[16] = new Point2f(520, 450); // Ring curled
+    peaceHand.SmoothedLandmarks2D[17] = new Point2f(540, 430);
+    peaceHand.SmoothedLandmarks2D[20] = new Point2f(540, 460); // Pinky curled
+
+    // 1. Establish baseline (upright vector: 0 deg delta)
+    peaceHand.SmoothedLandmarks2D[8] = new Point2f(490, 380);
+    peaceHand.SmoothedLandmarks2D[12] = new Point2f(510, 380); // Tips center = (500, 380), angle = -90 deg
+    testUndoDetector.Update(peaceHand);
+
+    // 2. Twist Left / Counter-Clockwise (Tips center = (380, 380), dx=-120, dy=-120, angle = -135 deg -> delta = -45 deg <= -42 deg)
+    peaceHand.SmoothedLandmarks2D[8] = new Point2f(370, 380);
+    peaceHand.SmoothedLandmarks2D[12] = new Point2f(390, 380);
+    CircleUndoAction undoAction = testUndoDetector.Update(peaceHand);
+    if (undoAction != CircleUndoAction.Undo)
+        throw new Exception("Wrist Twist Left (Undo) failed to trigger.");
+
+    // 3. Reset cooldown and test Twist Right / Clockwise (Tips center = (620, 380), dx=+120, dy=-120, angle = -45 deg -> delta = +45 deg >= +42 deg)
+    testUndoDetector.State.CooldownTimer.Reset();
+    testUndoDetector.Update(peaceHand); // re-establish baseline
+    peaceHand.SmoothedLandmarks2D[8] = new Point2f(610, 380);
+    peaceHand.SmoothedLandmarks2D[12] = new Point2f(630, 380);
+    CircleUndoAction redoAction = testUndoDetector.Update(peaceHand);
+    if (redoAction != CircleUndoAction.Redo)
+        throw new Exception("Wrist Twist Right (Redo) failed to trigger.");
+
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -371,6 +410,7 @@ Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize/Scr
 Console.WriteLine("  [M]         : Toggle Multi-Monitor Throw (Blade Swipe)");
 Console.WriteLine("  [V]         : Toggle Volume Control (L-Gesture Rotary Dial)");
 Console.WriteLine("  [L]         : Toggle PC Lock Gesture (Open-Fist-Open-Fist)");
+Console.WriteLine("  [U]         : Toggle Undo/Redo Gesture (2x Peace Circles)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
 Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
 Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
@@ -427,37 +467,43 @@ while (true)
     // 8. Process 4-Stage Security PC Lock Sequence (🖐️ -> ✊ -> 🖐️ -> ✊)
     lockController.Update(primaryHand);
 
-    // 9. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
+    // 9. Process Circular Peace-Sign Undo (Ctrl+Z) & Redo (Ctrl+Y) Gesture
+    circleUndoController.Update(primaryHand);
+
+    // 10. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 10. Render Hand Skeleton Bones Overlay
+    // 11. Render Hand Skeleton Bones Overlay
     renderer.Render(frame, trackedHands);
 
-    // 11. Render Mouse Click Feedback & Dwell Ring
+    // 12. Render Mouse Click Feedback & Dwell Ring
     mouseController.RenderFeedback(frame, primaryHand);
 
-    // 12. Render Swipe Scroll Feedback Arrows
+    // 13. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 13. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
+    // 14. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
     windowGrabController.RenderFeedback(frame);
 
-    // 14. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
+    // 15. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
     twoHandController.RenderFeedback(frame, trackedHands);
 
-    // 15. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
+    // 16. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
     monitorThrowController.RenderFeedback(frame, primaryHand);
 
-    // 16. Render Holographic Rotary Volume Dial & Live Audio Gauge
+    // 17. Render Holographic Rotary Volume Dial & Live Audio Gauge
     volumeController.RenderFeedback(frame);
 
-    // 17. Render 4-Stage Security PC Lock Sequence Badges & Alert
+    // 18. Render 4-Stage Security PC Lock Sequence Badges & Alert
     lockController.RenderFeedback(frame, primaryHand);
 
-    // 18. Render Virtual Test Target Object
+    // 19. Render Circular Trajectory Spiral Trail & Revolution Gauge
+    circleUndoController.RenderFeedback(frame, primaryHand);
+
+    // 20. Render Virtual Test Target Object
     virtualObject.Render(frame);
 
-    // 19. Real-time FPS Calculation
+    // 21. Real-time FPS Calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -466,14 +512,14 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 20. Render Telemetry HUD
+    // 22. Render Telemetry HUD
     if (showHud)
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController, lockController);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController, lockController, circleUndoController);
     
-    // 21. Display Frame in OpenCV Window
+    // 23. Display Frame in OpenCV Window
     window.ShowImage(frame);
 
-    // 22. Handle Keyboard Hotkeys
+    // 24. Handle Keyboard Hotkeys
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
@@ -507,6 +553,10 @@ while (true)
     {
         lockController.Enabled = !lockController.Enabled;
     }
+    else if (key == 'u' || key == 'U')
+    {
+        circleUndoController.Enabled = !circleUndoController.Enabled;
+    }
     else if (key == 's' || key == 'S')
     {
         tracker.SmoothingEnabled = !tracker.SmoothingEnabled;
@@ -534,9 +584,9 @@ Console.WriteLine("Shutting down NEXA Hand Tracking...");
 /// <summary>
 /// Draws the semi-transparent telemetry HUD card with live FPS, filter states, and controller status indicators.
 /// </summary>
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl, LockSequenceController lockCtrl)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl, LockSequenceController lockCtrl, CircleUndoController undoCtrl)
 {
-    Rect hudRect = new(10, 10, 390, 202);
+    Rect hudRect = new(10, 10, 390, 220);
     using Mat overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
@@ -714,8 +764,31 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Sperren (L): {lockStatus}"), new Point(20, 174),
         HersheyFonts.HersheySimplex, 0.36, lockColor, 1, LineTypes.AntiAlias);
 
+    string undoStatus;
+    Scalar undoColor;
+    if (!undoCtrl.Enabled)
+    {
+        undoStatus = "AUS (Taste U)";
+        undoColor = new Scalar(160, 160, 160);
+    }
+    else if (undoCtrl.State.IsTracking && Math.Abs(undoCtrl.State.AngleDeltaDeg) > 5.0)
+    {
+        string dir = undoCtrl.State.AngleDeltaDeg < 0.0 ? "Undo <--" : "Redo -->";
+        string sign = undoCtrl.State.AngleDeltaDeg >= 0 ? "+" : "";
+        undoStatus = $"{dir} ({sign}{undoCtrl.State.AngleDeltaDeg:F0} deg / 42 deg)";
+        undoColor = undoCtrl.State.AngleDeltaDeg < 0.0 ? new Scalar(0, 220, 255) : new Scalar(255, 160, 0);
+    }
+    else
+    {
+        undoStatus = "Bereit (Peace Handgelenk-Dreh)";
+        undoColor = new Scalar(0, 255, 120);
+    }
+
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Undo/Redo (U): {undoStatus}"), new Point(20, 192),
+        HersheyFonts.HersheySimplex, 0.36, undoColor, 1, LineTypes.AntiAlias);
+
     string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
     string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
-    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 192),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 210),
         HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }
