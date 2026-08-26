@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using NEXA.Adapters.Output;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -6,27 +8,37 @@ using OpenCvSharp;
 namespace NEXA.Domain.Grab;
 
 /// <summary>
-/// Application adapter orchestrating real OS window grabbing, delta relocation, and camera viewport feedback rendering.
+/// Application adapter orchestrating real OS window grabbing, delta relocation, two-hand pinch resizing, and camera viewport feedback rendering.
 /// <para>
-/// <b>What it is:</b> The controller responsible for moving physical Windows desktop applications via hand gestures.
+/// <b>What it is:</b> The controller responsible for moving and resizing physical Windows desktop applications via hand gestures.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="bullet">
-/// <item><description>Initializes the <see cref="WindowGrabDetector"/> with screen resolution obtained from <see cref="IInputSink.GetScreenResolution"/>.</description></item>
+/// <item><description>Initializes <see cref="WindowGrabDetector"/> and <see cref="WindowResizeDetector"/> with monitor resolution from <see cref="IInputSink"/>.</description></item>
 /// <item><description>Brings the grabbed window to the foreground via <see cref="IInputSink.BringWindowToForeground"/> upon latching.</description></item>
-/// <item><description>Invokes <see cref="IInputSink.MoveWindow"/> when a window is grabbed and moved.</description></item>
-/// <item><description>Raises <see cref="OnFistReleased"/> when a grabbed window is released to initiate downstream windows like Two-Hand action windows.</description></item>
-/// <item><description>Inverse-projects desktop window bounds into camera space via <see cref="WindowGrabDetector.MapFromScreen"/> to draw glowing corner brackets and metadata tags.</description></item>
+/// <item><description>Invokes <see cref="IInputSink.MoveWindow"/> for position updates and <see cref="IInputSink.ResizeWindow"/> for pinch-aperture scaling.</description></item>
+/// <item><description>Raises <see cref="OnFistReleased"/> when a grabbed window is released to trigger downstream action windows.</description></item>
+/// <item><description>Renders back-projected corner brackets and AR pinch-to-scale calipers directly on the camera viewport.</description></item>
 /// </list>
 /// </para>
 /// </summary>
 public class WindowGrabController
 {
     /// <summary>
-    /// The input sink used to query and move physical OS windows.
+    /// The input sink used to query, move, and resize physical OS windows.
     /// </summary>
     private readonly IInputSink _inputSink;
+
+    /// <summary>
+    /// Desktop primary monitor horizontal resolution in pixels.
+    /// </summary>
+    private readonly int _screenWidth;
+
+    /// <summary>
+    /// Desktop primary monitor vertical resolution in pixels.
+    /// </summary>
+    private readonly int _screenHeight;
 
     /// <summary>
     /// Track the HWND that was activated to ensure BringWindowToForeground is called once per grab cycle.
@@ -49,7 +61,12 @@ public class WindowGrabController
     public WindowGrabDetector Detector { get; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether window grabbing is enabled.
+    /// The secondary domain detector handling continuous two-hand pinch aperture scaling.
+    /// </summary>
+    public WindowResizeDetector ResizeDetector { get; } = new();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether window grabbing and resizing are enabled.
     /// </summary>
     public bool Enabled
     {
@@ -63,25 +80,59 @@ public class WindowGrabController
     public WindowGrabState State => Detector.State;
 
     /// <summary>
+    /// Gets the internal window resize state machine.
+    /// </summary>
+    public WindowResizeState ResizeState => ResizeDetector.State;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="WindowGrabController"/> class, querying display resolution from the input sink.
     /// </summary>
     /// <param name="inputSink">The output adapter for OS inputs (defaults to <see cref="Win32InputSink"/> if null).</param>
     public WindowGrabController(IInputSink? inputSink = null)
     {
         _inputSink = inputSink ?? new Win32InputSink();
-        (int width, int height) = _inputSink.GetScreenResolution();
-        Detector = new WindowGrabDetector(width, height);
+        (_screenWidth, _screenHeight) = _inputSink.GetScreenResolution();
+        Detector = new WindowGrabDetector(_screenWidth, _screenHeight);
     }
 
     /// <summary>
-    /// Evaluates hand tracking data for the current frame and moves the grabbed desktop window if active.
+    /// Single-hand overload: Evaluates hand tracking data for moving the grabbed desktop window.
     /// </summary>
-    /// <param name="hand">The tracked hand instance.</param>
-    /// <param name="frameWidth">Width of the camera frame in pixels.</param>
-    /// <param name="frameHeight">Height of the camera frame in pixels.</param>
     public void Update(TrackedHand? hand, int frameWidth, int frameHeight)
     {
-        (bool isGrabbed, IntPtr hwnd, int targetX, int targetY) = Detector.Update(hand, frameWidth, frameHeight, _inputSink);
+        List<TrackedHand> list = hand != null ? [hand] : [];
+        Update(list, frameWidth, frameHeight);
+    }
+
+    /// <summary>
+    /// Multi-hand evaluation: Moves grabbed window with primary fist hand, and resizes window with secondary pinch hand.
+    /// </summary>
+    /// <param name="hands">The list of active tracked hands.</param>
+    /// <param name="frameWidth">Width of the camera frame in pixels.</param>
+    /// <param name="frameHeight">Height of the camera frame in pixels.</param>
+    public void Update(List<TrackedHand>? hands, int frameWidth, int frameHeight)
+    {
+        TrackedHand? primaryHand = null;
+        TrackedHand? secondaryHand = null;
+
+        if (hands != null && hands.Count > 0)
+        {
+            if (State.IsGrabbed)
+            {
+                // Find hand closest to last tracked palm center as the primary dragging hand
+                primaryHand = hands.OrderBy(h => Math.Pow(h.SmoothedLandmarks2D[9].X - State.LastPalmCenter.X, 2) +
+                                                 Math.Pow(h.SmoothedLandmarks2D[9].Y - State.LastPalmCenter.Y, 2)).FirstOrDefault();
+                secondaryHand = hands.FirstOrDefault(h => h != primaryHand);
+            }
+            else
+            {
+                // Prefer hand making a Fist, otherwise first hand
+                primaryHand = hands.FirstOrDefault(h => h.Gesture == "Fist") ?? hands[0];
+                secondaryHand = hands.FirstOrDefault(h => h != primaryHand);
+            }
+        }
+
+        (bool isGrabbed, IntPtr hwnd, int targetX, int targetY) = Detector.Update(primaryHand, frameWidth, frameHeight, _inputSink);
 
         if (isGrabbed && hwnd != IntPtr.Zero)
         {
@@ -96,9 +147,31 @@ public class WindowGrabController
 
             _inputSink.MoveWindow(hwnd, targetX, targetY);
             _wasGrabbedLastFrame = true;
+
+            // Process secondary hand pinch-zoom resizing
+            if (secondaryHand != null)
+            {
+                (bool shouldResize, int newWidth, int newHeight) = ResizeDetector.Update(
+                    secondaryHand,
+                    State.InitialWindowBounds.Width,
+                    State.InitialWindowBounds.Height,
+                    _screenWidth,
+                    _screenHeight);
+
+                if (shouldResize)
+                {
+                    _inputSink.ResizeWindow(hwnd, newWidth, newHeight);
+                }
+            }
+            else
+            {
+                ResizeDetector.Reset();
+            }
         }
         else
         {
+            ResizeDetector.Reset();
+
             if (_wasGrabbedLastFrame)
             {
                 OnFistReleased?.Invoke();
@@ -109,7 +182,7 @@ public class WindowGrabController
     }
 
     /// <summary>
-    /// Renders augmented-reality visual feedback (hold countdown ring and window tracking overlay) onto the camera frame.
+    /// Renders augmented-reality visual feedback (hold countdown ring, scaled corner brackets, and pinch caliper) onto the camera frame.
     /// </summary>
     /// <param name="frame">The camera image frame to draw on.</param>
     public void RenderFeedback(Mat frame)
@@ -135,11 +208,19 @@ public class WindowGrabController
         // 2. Grabbed Window Corner-Bracket Overlay (Back-projected from Desktop Screen-Space)
         if (State.IsGrabbed && State.InitialWindowBounds.Width > 0 && State.InitialWindowBounds.Height > 0)
         {
+            int currentWinW = ResizeState.IsActive && ResizeState.CurrentWidth > 0
+                ? ResizeState.CurrentWidth
+                : State.InitialWindowBounds.Width;
+
+            int currentWinH = ResizeState.IsActive && ResizeState.CurrentHeight > 0
+                ? ResizeState.CurrentHeight
+                : State.InitialWindowBounds.Height;
+
             // Project Top-Left and Bottom-Right desktop bounds back to camera pixel coordinates
             (float camLeft, float camTop) = Detector.MapFromScreen(State.CurrentTargetX, State.CurrentTargetY, frame.Width, frame.Height);
             (float camRight, float camBottom) = Detector.MapFromScreen(
-                State.CurrentTargetX + State.InitialWindowBounds.Width,
-                State.CurrentTargetY + State.InitialWindowBounds.Height,
+                State.CurrentTargetX + currentWinW,
+                State.CurrentTargetY + currentWinH,
                 frame.Width, frame.Height);
 
             int x = (int)Math.Round(camLeft);
@@ -154,7 +235,7 @@ public class WindowGrabController
                 Math.Clamp(h, 20, frame.Height - 4)
             );
 
-            Scalar themeColor = new(0, 100, 255); // Glowing Orange / Red
+            Scalar themeColor = ResizeState.IsActive ? new Scalar(0, 220, 255) : new Scalar(0, 100, 255);
 
             // Translucent backdrop
             using (Mat overlay = frame.Clone())
@@ -170,26 +251,46 @@ public class WindowGrabController
             if (cornerLen > 4)
             {
                 Cv2.Line(frame, new Point(boxRect.Left, boxRect.Top), new Point(boxRect.Left + cornerLen, boxRect.Top), themeColor, 2);
-                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Top), new Point(boxRect.Left + cornerLen, boxRect.Top), themeColor, 2);
+                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Top), new Point(boxRect.Left, boxRect.Top + cornerLen), themeColor, 2);
 
                 Cv2.Line(frame, new Point(boxRect.Right, boxRect.Top), new Point(boxRect.Right - cornerLen, boxRect.Top), themeColor, 2);
                 Cv2.Line(frame, new Point(boxRect.Right, boxRect.Top), new Point(boxRect.Right, boxRect.Top + cornerLen), themeColor, 2);
 
                 Cv2.Line(frame, new Point(boxRect.Left, boxRect.Bottom), new Point(boxRect.Left + cornerLen, boxRect.Bottom), themeColor, 2);
-                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Bottom), new Point(boxRect.Left + cornerLen, boxRect.Bottom), themeColor, 2);
+                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Bottom), new Point(boxRect.Left, boxRect.Bottom - cornerLen), themeColor, 2);
 
                 Cv2.Line(frame, new Point(boxRect.Right, boxRect.Bottom), new Point(boxRect.Right - cornerLen, boxRect.Bottom), themeColor, 2);
                 Cv2.Line(frame, new Point(boxRect.Right, boxRect.Bottom), new Point(boxRect.Right, boxRect.Bottom + cornerLen), themeColor, 2);
             }
 
             // Window metadata header badge
-            string titleDisplay = State.CachedWindowTitle.Length > 24
-                ? State.CachedWindowTitle.Substring(0, 21) + "..."
+            string titleDisplay = State.CachedWindowTitle.Length > 20
+                ? State.CachedWindowTitle.Substring(0, 17) + "..."
                 : State.CachedWindowTitle;
 
-            string tagText = $"GRABBED: [{titleDisplay}] ({(int)State.CurrentTargetX}, {(int)State.CurrentTargetY})";
+            string tagText = ResizeState.IsActive
+                ? $"RESIZING: [{titleDisplay}] {currentWinW}x{currentWinH} ({ResizeState.CurrentScale:F2}x)"
+                : $"GRABBED: [{titleDisplay}] ({(int)State.CurrentTargetX}, {(int)State.CurrentTargetY})";
+
             Cv2.PutText(frame, tagText, new Point(Math.Max(10, boxRect.Left + 8), Math.Max(25, boxRect.Top + 20)),
-                HersheyFonts.HersheySimplex, 0.45, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
+                HersheyFonts.HersheySimplex, 0.44, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
+        }
+
+        // 3. Pinch-to-Scale Measurement Caliper on Resizing Hand
+        if (ResizeState.IsActive)
+        {
+            Point pThumb = new((int)ResizeState.ThumbTip.X, (int)ResizeState.ThumbTip.Y);
+            Point pIndex = new((int)ResizeState.IndexTip.X, (int)ResizeState.IndexTip.Y);
+
+            // Glowing caliper line between thumb and index
+            Cv2.Line(frame, pThumb, pIndex, new Scalar(0, 220, 255), 2, LineTypes.AntiAlias);
+            Cv2.Circle(frame, pThumb, 6, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
+            Cv2.Circle(frame, pIndex, 6, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
+
+            Point midPt = new((pThumb.X + pIndex.X) / 2, (pThumb.Y + pIndex.Y) / 2);
+            string scaleLabel = $"SCALE: {ResizeState.CurrentScale:F2}x";
+            Cv2.PutText(frame, scaleLabel, new Point(midPt.X + 12, midPt.Y),
+                HersheyFonts.HersheySimplex, 0.44, new Scalar(0, 220, 255), 1, LineTypes.AntiAlias);
         }
     }
 }

@@ -88,6 +88,7 @@ public class Win32InputSink : IInputSink
     private const uint MOUSEEVENTF_WHEEL = 0x0800;
 
     private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
 
@@ -174,6 +175,14 @@ public class Win32InputSink : IInputSink
         if (hwnd == IntPtr.Zero) 
             return;
         SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    /// <inheritdoc/>
+    public void ResizeWindow(IntPtr hwnd, int width, int height)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     /// <inheritdoc/>

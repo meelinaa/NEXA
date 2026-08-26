@@ -72,7 +72,7 @@ if (args.Length > 0 && args[0] == "--test")
     scrollController.UpdateMomentum();
     scrollController.Update(results.FirstOrDefault());
     scrollController.RenderFeedback(testFrame);
-    windowGrabController.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
+    windowGrabController.Update(results, testFrame.Width, testFrame.Height);
     windowGrabController.RenderFeedback(testFrame);
     twoHandController.Update(results);
     twoHandController.RenderFeedback(testFrame, results);
@@ -128,6 +128,25 @@ if (args.Length > 0 && args[0] == "--test")
     // Verify cooldown
     if (!testTwoHand.State.InCooldown) throw new Exception("Cooldown should be active after trigger.");
 
+    // Automated Unit Test 3: WindowResizeDetector Simulation
+    Console.WriteLine("Testing WindowResizeDetector (Continuous Pinch Resizing)...");
+    WindowResizeDetector testResize = new();
+    TrackedHand zoomHand = new() { Gesture = "L" };
+    zoomHand.SmoothedLandmarks2D[0] = new Point2f(500, 500);
+    zoomHand.SmoothedLandmarks2D[9] = new Point2f(500, 400); // Palm size = 100
+    zoomHand.SmoothedLandmarks2D[4] = new Point2f(470, 400); // Thumb
+    zoomHand.SmoothedLandmarks2D[8] = new Point2f(530, 400); // Index (Initial distance = 60)
+
+    // Frame 1: Establishes baseline ratio
+    (bool shouldResize1, int winW1, int winH1) = testResize.Update(zoomHand, 800, 600, 1920, 1080);
+    if (!testResize.State.IsActive) throw new Exception("WindowResizeDetector should be active.");
+
+    // Frame 2: Spread fingers wider to 120px (2.0x scale)
+    zoomHand.SmoothedLandmarks2D[4] = new Point2f(440, 400);
+    zoomHand.SmoothedLandmarks2D[8] = new Point2f(560, 400);
+    (bool shouldResize2, int winW2, int winH2) = testResize.Update(zoomHand, 800, 600, 1920, 1080);
+    if (!shouldResize2 || winW2 <= 800) throw new Exception("WindowResizeDetector failed to scale window up.");
+
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -157,7 +176,7 @@ Console.WriteLine("\nControls:");
 Console.WriteLine("  [ESC] / [Q] : Exit application");
 Console.WriteLine("  [C]         : Toggle Mouse Navigation & Dwell-Click");
 Console.WriteLine("  [W]         : Toggle Swipe Scrolling");
-Console.WriteLine("  [G]         : Toggle Real Window Grabbing");
+Console.WriteLine("  [G]         : Toggle Real Window Grabbing & Pinch-Resizing");
 Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
 Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
@@ -200,8 +219,8 @@ while (true)
     scrollController.LastPointerActiveTime = mouseController.LastPointerActiveTime;
     scrollController.Update(primaryHand);
 
-    // 4. Process Real Windows OS Window Grabbing & Delta Relocation
-    windowGrabController.Update(primaryHand, frame.Width, frame.Height);
+    // 4. Process Real Windows OS Window Grabbing, Moving & Two-Hand Pinch Resizing
+    windowGrabController.Update(trackedHands, frame.Width, frame.Height);
 
     // 5. Process Two-Hand Window Gestures (Maximize / Minimize in 3s Window)
     twoHandController.Update(trackedHands);
@@ -218,7 +237,7 @@ while (true)
     // 9. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 10. Render Real Window Grab Feedback & Corner Brackets
+    // 10. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
     windowGrabController.RenderFeedback(frame);
 
     // 11. Render Two-Hand Gesture Banner, Touch Link Line & Action Arrows
@@ -349,6 +368,11 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     {
         winGrabStatus = "AUS (Taste G)";
         winGrabColor = new Scalar(160, 160, 160);
+    }
+    else if (grabCtrl.ResizeState.IsActive)
+    {
+        winGrabStatus = $"Resize: {grabCtrl.ResizeState.CurrentWidth}x{grabCtrl.ResizeState.CurrentHeight} ({grabCtrl.ResizeState.CurrentScale:F2}x)";
+        winGrabColor = new Scalar(0, 220, 255);
     }
     else if (grabCtrl.State.IsGrabbed)
     {
