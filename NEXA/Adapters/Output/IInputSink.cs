@@ -6,7 +6,7 @@ namespace NEXA.Adapters.Output;
 /// <b>What it is:</b> A decoupled contract defining all physical hardware and OS commands that NEXA can issue.
 /// </para>
 /// <para>
-/// <b>What it does:</b> Provides unified methods for scrolling, cursor positioning, left-clicking, window relocation, window resizing, window maximization/minimization, and focus tracking.
+/// <b>What it does:</b> Provides unified methods for scrolling, cursor positioning, left-clicking, window relocation, window resizing, atomic window repositioning/resizing, window maximization/minimization, and focus tracking.
 /// </para>
 /// <para>
 /// <b>Why it is used:</b> Shields domain logic and high-level controllers from platform-specific Win32 P/Invoke APIs, enabling mockability and automated unit testing.
@@ -50,6 +50,16 @@ public interface IInputSink
     /// <param name="width">Target window width in pixels.</param>
     /// <param name="height">Target window height in pixels.</param>
     void ResizeWindow(IntPtr hwnd, int width, int height);
+
+    /// <summary>
+    /// Atomically moves and resizes a native OS window in a single system call without altering its Z-order.
+    /// </summary>
+    /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
+    /// <param name="x">Target horizontal desktop coordinate.</param>
+    /// <param name="y">Target vertical desktop coordinate.</param>
+    /// <param name="width">Target window width in pixels.</param>
+    /// <param name="height">Target window height in pixels.</param>
+    void SetWindowRect(IntPtr hwnd, int x, int y, int width, int height);
 
     /// <summary>
     /// Brings the specified native OS window to the top of the Z-order and sets it as the foreground window.

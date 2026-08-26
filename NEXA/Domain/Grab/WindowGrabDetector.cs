@@ -6,84 +6,95 @@ using OpenCvSharp;
 namespace NEXA.Domain.Grab;
 
 /// <summary>
-/// Domain-level detector for window grab initiation, delta dragging, and release management.
+/// Domain-level analyzer evaluating continuous fist-hold gestures, delta window repositioning, and Windows-style Snap-to-Side edge docking.
 /// <para>
-/// <b>What it is:</b> A state machine engine managing real-time window manipulation gestures.
+/// <b>What it is:</b> The gesture detector evaluating real Windows desktop window manipulation.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="number">
-/// <item><description><b>Coordinate Mapping:</b> Maps normalized camera space to monitor pixels (<see cref="MapToScreen"/>) and inverse-projects desktop bounds back into camera viewport space (<see cref="MapFromScreen"/>).</description></item>
-/// <item><description><b>Hold Engagement (2.0s):</b> Requires holding a steady fist gesture for 2.0s over a target window to latch onto it.</description></item>
-/// <item><description><b>Single-Call Caching:</b> Queries window title, bounds, and initial hand coordinates strictly once upon grab engagement.</description></item>
-/// <item><description><b>Deadzone & Adaptive Smoothing:</b> Filters out camera jitter with a 3.0px stillness deadzone and dynamic exponential smoothing.</description></item>
-/// <item><description><b>Time-Based Release Debounce (120ms):</b> Prevents accidental window dropouts during momentary optical tracking noise.</description></item>
+/// <item><description><b>Hold Detection:</b> Requires holding a clenched fist for 2.0 seconds directly over an OS window to engage dragging.</description></item>
+/// <item><description><b>Delta Dragging:</b> Translates the window by tracking relative hand coordinate changes from the initial grab anchor.</description></item>
+/// <item><description><b>Edge Snap Docking:</b> Automatically docks the window to Left Half, Right Half, or Top Maximize when dragged near screen borders (&lt;=35px).</description></item>
+/// <item><description><b>Seamless Un-docking:</b> Allows the user to continue dragging away from the docked edge (&gt;65px), seamlessly restoring original geometry.</description></item>
+/// <item><description><b>Release Debouncing:</b> Enforces a 120ms buffer to absorb temporary tracking flutter without dropping the window.</description></item>
 /// </list>
 /// </para>
 /// <para>
-/// <b>Why it is used:</b> Encapsulates window manipulation logic cleanly away from OpenCV video capture and Win32 interop.
-/// </para>
-/// <para>
-/// <b>Consequence:</b> Generates rock-steady, smooth, jitter-free window relocation commands.
+/// <b>Why it is used:</b> Provides native-feeling desktop window dragging and docking without accidental triggers or rigid lock-in.
 /// </para>
 /// </summary>
 public class WindowGrabDetector
 {
     /// <summary>
-    /// Gets the internal state machine tracking hold times, bounds, and debounce timers.
+    /// Gets the internal state container tracking hold durations, drag deltas, and snap alignments.
     /// </summary>
     public WindowGrabState State { get; } = new();
 
     /// <summary>
-    /// Gets or sets a value indicating whether window grabbing is active.
+    /// Gets or sets a value indicating whether window grab detection is enabled.
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// The physical pixel width of the primary monitor.
+    /// Desktop primary monitor horizontal resolution in pixels.
     /// </summary>
     public int ScreenWidth { get; }
 
     /// <summary>
-    /// The physical pixel height of the primary monitor.
+    /// Desktop primary monitor vertical resolution in pixels.
     /// </summary>
     public int ScreenHeight { get; }
 
     /// <summary>
-    /// Continuous smoothed horizontal window target coordinate accumulator.
+    /// Pixel distance from monitor borders required to trigger edge snap docking.
+    /// </summary>
+    public const int SnapEdgeMargin = 35;
+
+    /// <summary>
+    /// Pixel distance required to pull away from a docked border before un-snapping back to free dragging.
+    /// </summary>
+    public const int UnsnapMargin = 65;
+
+    /// <summary>
+    /// Internal smoothed horizontal coordinate accumulator.
     /// </summary>
     private double _smoothedTargetX = 0;
 
     /// <summary>
-    /// Continuous smoothed vertical window target coordinate accumulator.
+    /// Internal smoothed vertical coordinate accumulator.
     /// </summary>
     private double _smoothedTargetY = 0;
 
     /// <summary>
-    /// Flag indicating whether the smoothing accumulator has been initialized with the starting window position.
+    /// Flag indicating whether the smoothing accumulator has been initialized with the initial window position.
     /// </summary>
     private bool _hasInitializedSmoothing = false;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="WindowGrabDetector"/> class with specified desktop display dimensions.
+    /// Initializes a new instance of the <see cref="WindowGrabDetector"/> class with display resolution.
     /// </summary>
-    /// <param name="screenWidth">Monitor width in pixels.</param>
-    /// <param name="screenHeight">Monitor height in pixels.</param>
+    /// <param name="screenWidth">Monitor display width in pixels.</param>
+    /// <param name="screenHeight">Monitor display height in pixels.</param>
     public WindowGrabDetector(int screenWidth, int screenHeight)
     {
-        ScreenWidth = screenWidth;
-        ScreenHeight = screenHeight;
+        ScreenWidth = screenWidth > 0 ? screenWidth : 1920;
+        ScreenHeight = screenHeight > 0 ? screenHeight : 1080;
     }
 
     /// <summary>
-    /// Evaluates hand tracking data for the current frame to update window grab engagement or translation deltas.
+    /// Evaluates hand tracking data for the current frame, updates grab/drag state, and detects edge snapping.
     /// </summary>
     /// <param name="hand">The tracked hand instance.</param>
-    /// <param name="frameWidth">Width of the camera frame in pixels.</param>
-    /// <param name="frameHeight">Height of the camera frame in pixels.</param>
-    /// <param name="inputSink">The output adapter to query window handles and geometry.</param>
-    /// <returns>A tuple containing (isGrabbed, targetHwnd, targetX, targetY) for window movement.</returns>
-    public (bool isGrabbed, IntPtr hwnd, int targetX, int targetY) Update(TrackedHand? hand, int frameWidth, int frameHeight, IInputSink inputSink)
+    /// <param name="frameWidth">Camera frame width in pixels.</param>
+    /// <param name="frameHeight">Camera frame height in pixels.</param>
+    /// <param name="inputSink">The output adapter used to query native OS window handles and geometry.</param>
+    /// <returns>A tuple containing (isGrabbed, targetHwnd, targetX, targetY).</returns>
+    public (bool isGrabbed, IntPtr targetHwnd, int targetX, int targetY) Update(
+        TrackedHand? hand,
+        int frameWidth,
+        int frameHeight,
+        IInputSink inputSink)
     {
         if (!Enabled)
         {
@@ -91,9 +102,9 @@ public class WindowGrabDetector
             return (false, IntPtr.Zero, 0, 0);
         }
 
-        bool isFist = hand != null && hand.Gesture == "Fist";
+        string currentGesture = hand?.Gesture ?? string.Empty;
+        bool isFist = currentGesture == "Fist";
 
-        // Handle case where hand is lost or gesture changes
         if (!isFist)
         {
             if (State.IsGrabbed)
@@ -148,10 +159,12 @@ public class WindowGrabDetector
                     State.TargetHwnd = hwnd;
                     State.CachedWindowTitle = title;
                     State.InitialWindowBounds = new Rect(winX, winY, winW, winH);
+                    State.PreSnapBounds = new Rect(winX, winY, winW, winH);
                     State.InitialHandScreenX = currentHandX;
                     State.InitialHandScreenY = currentHandY;
                     State.CurrentTargetX = winX;
                     State.CurrentTargetY = winY;
+                    State.ActiveSnap = WindowSnapType.None;
 
                     _smoothedTargetX = winX;
                     _smoothedTargetY = winY;
@@ -172,6 +185,73 @@ public class WindowGrabDetector
 
             double rawTargetX = State.InitialWindowBounds.X + deltaX;
             double rawTargetY = State.InitialWindowBounds.Y + deltaY;
+
+            // =========================================================================
+            // SNAP-TO-SIDE EDGE DOCKING LOGIC
+            // =========================================================================
+            if (!State.IsSnapped)
+            {
+                // Check if hand is dragged near desktop screen borders
+                if (currentHandX <= SnapEdgeMargin)
+                {
+                    State.ActiveSnap = WindowSnapType.LeftHalf;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(0, 0, ScreenWidth / 2, ScreenHeight);
+                }
+                else if (currentHandX >= ScreenWidth - SnapEdgeMargin)
+                {
+                    State.ActiveSnap = WindowSnapType.RightHalf;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(ScreenWidth / 2, 0, ScreenWidth / 2, ScreenHeight);
+                }
+                else if (currentHandY <= SnapEdgeMargin)
+                {
+                    State.ActiveSnap = WindowSnapType.TopMaximize;
+                    State.PreSnapBounds = State.InitialWindowBounds;
+                    State.SnapBounds = new Rect(0, 0, ScreenWidth, ScreenHeight);
+                }
+            }
+            else
+            {
+                // Window is currently docked: check if user pulls hand away to seamlessly un-snap
+                bool shouldUnsnap = false;
+                if (State.ActiveSnap == WindowSnapType.LeftHalf && currentHandX > UnsnapMargin)
+                {
+                    shouldUnsnap = true;
+                }
+                else if (State.ActiveSnap == WindowSnapType.RightHalf && currentHandX < ScreenWidth - UnsnapMargin)
+                {
+                    shouldUnsnap = true;
+                }
+                else if (State.ActiveSnap == WindowSnapType.TopMaximize && currentHandY > UnsnapMargin)
+                {
+                    shouldUnsnap = true;
+                }
+
+                if (shouldUnsnap)
+                {
+                    State.ActiveSnap = WindowSnapType.None;
+                    // Re-anchor window to hand location using pre-snap dimensions without jumps
+                    int restoredW = State.PreSnapBounds.Width;
+                    int restoredH = State.PreSnapBounds.Height;
+                    int restoredX = Math.Clamp(currentHandX - restoredW / 2, 0, ScreenWidth - restoredW);
+                    int restoredY = Math.Clamp(currentHandY - 25, 0, ScreenHeight - restoredH);
+
+                    State.InitialWindowBounds = new Rect(restoredX, restoredY, restoredW, restoredH);
+                    State.InitialHandScreenX = currentHandX;
+                    State.InitialHandScreenY = currentHandY;
+
+                    _smoothedTargetX = restoredX;
+                    _smoothedTargetY = restoredY;
+                }
+            }
+
+            if (State.IsSnapped)
+            {
+                State.CurrentTargetX = State.SnapBounds.X;
+                State.CurrentTargetY = State.SnapBounds.Y;
+                return (true, State.TargetHwnd, State.CurrentTargetX, State.CurrentTargetY);
+            }
 
             // Dynamic exponential smoothing and deadzone filtering for buttery-smooth movement
             if (!_hasInitializedSmoothing)
@@ -215,7 +295,7 @@ public class WindowGrabDetector
     }
 
     /// <summary>
-    /// Fully resets all grab, drag, and smoothing states.
+    /// Fully resets all grab, drag, smoothing, and snap docking states.
     /// </summary>
     public void Reset()
     {
@@ -223,6 +303,9 @@ public class WindowGrabDetector
         State.TargetHwnd = IntPtr.Zero;
         State.CachedWindowTitle = string.Empty;
         State.InitialWindowBounds = new Rect();
+        State.PreSnapBounds = new Rect();
+        State.SnapBounds = new Rect();
+        State.ActiveSnap = WindowSnapType.None;
         State.InitialHandScreenX = 0;
         State.InitialHandScreenY = 0;
         State.CurrentTargetX = 0;

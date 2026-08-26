@@ -186,6 +186,14 @@ public class Win32InputSink : IInputSink
     }
 
     /// <inheritdoc/>
+    public void SetWindowRect(IntPtr hwnd, int x, int y, int width, int height)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+        SetWindowPos(hwnd, IntPtr.Zero, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    /// <inheritdoc/>
     public void BringWindowToForeground(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)

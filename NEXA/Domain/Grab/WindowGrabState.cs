@@ -5,7 +5,7 @@ using OpenCvSharp;
 namespace NEXA.Domain.Grab;
 
 /// <summary>
-/// State model for real OS window grabbing, hold tracking, and delta dragging.
+/// State model for real OS window grabbing, hold tracking, delta dragging, and edge snap docking.
 /// <para>
 /// <b>What it is:</b> The state machine memory model for <see cref="WindowGrabDetector"/>.
 /// </para>
@@ -15,6 +15,7 @@ namespace NEXA.Domain.Grab;
 /// <item><description>Tracks continuous fist hold duration toward the 2.0s engagement threshold.</description></item>
 /// <item><description>Holds the captured window handle (HWND), cached window title, and initial desktop bounds.</description></item>
 /// <item><description>Maintains initial and current hand screen coordinates for delta translation calculations.</description></item>
+/// <item><description>Tracks edge docking state (Snap Left, Snap Right, Snap Top) and pre-snap restoration geometry.</description></item>
 /// <item><description>Provides a 120ms time-based release debounce to prevent accidental dropouts during camera tracking flutter.</description></item>
 /// </list>
 /// </para>
@@ -22,7 +23,7 @@ namespace NEXA.Domain.Grab;
 /// <b>Why it is used:</b> Encapsulates window manipulation state cleanly in the Domain layer.
 /// </para>
 /// <para>
-/// <b>Consequence:</b> Provides stable, jitter-free multi-frame window dragging.
+/// <b>Consequence:</b> Provides stable, jitter-free multi-frame window dragging and docking.
 /// </para>
 /// </summary>
 public class WindowGrabState
@@ -76,6 +77,26 @@ public class WindowGrabState
     /// The calculated current target desktop Y coordinate for the window.
     /// </summary>
     public int CurrentTargetY { get; set; }
+
+    /// <summary>
+    /// The current edge snap docking alignment of the grabbed window.
+    /// </summary>
+    public WindowSnapType ActiveSnap { get; set; } = WindowSnapType.None;
+
+    /// <summary>
+    /// Indicates whether the window is currently docked to an edge.
+    /// </summary>
+    public bool IsSnapped => ActiveSnap != WindowSnapType.None;
+
+    /// <summary>
+    /// The original window geometry preserved prior to the first snap action for un-dock restoration.
+    /// </summary>
+    public Rect PreSnapBounds { get; set; }
+
+    /// <summary>
+    /// The computed desktop boundary rectangle applied during the active snap state.
+    /// </summary>
+    public Rect SnapBounds { get; set; }
 
     /// <summary>
     /// Most recent 2D palm center position recorded during tracking.
