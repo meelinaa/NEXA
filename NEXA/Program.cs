@@ -10,6 +10,7 @@ using NEXA.Domain.Grab;
 using NEXA.Domain.MonitorThrow;
 using NEXA.Domain.Scroll;
 using NEXA.Domain.TwoHand;
+using NEXA.Domain.Volume;
 using NEXA.Hand;
 using NEXA.Object;
 using OpenCvSharp;
@@ -49,6 +50,7 @@ Console.WriteLine("Loading MediaPipe ONNX Models...");
 // 1. Initialize Pipeline & Output Adapters
 using HandTracker tracker = new(palmModelPath, landmarkModelPath);
 Win32InputSink inputSink = new();
+Win32AudioSink audioSink = new();
 HandMeshRenderer renderer = new();
 VirtualObjectController virtualObject = new();
 MouseController mouseController = new(inputSink);
@@ -56,6 +58,7 @@ ScrollController scrollController = new(inputSink);
 WindowGrabController windowGrabController = new(inputSink);
 TwoHandGestureController twoHandController = new(inputSink);
 MonitorThrowController monitorThrowController = new(inputSink);
+VolumeController volumeController = new(audioSink);
 
 // Wire 3-second post-fist window trigger
 windowGrabController.OnFistReleased += () => twoHandController.Detector.NotifyFistReleased();
@@ -80,6 +83,8 @@ if (args.Length > 0 && args[0] == "--test")
     twoHandController.RenderFeedback(testFrame, results);
     monitorThrowController.Update(results.FirstOrDefault());
     monitorThrowController.RenderFeedback(testFrame, results.FirstOrDefault());
+    volumeController.Update(results.FirstOrDefault());
+    volumeController.RenderFeedback(testFrame);
 
     // Automated Unit Test 1: WindowGrabDetector State-Machine Simulation
     Console.WriteLine("Testing WindowGrabDetector state machine transitions...");
@@ -194,6 +199,33 @@ if (args.Length > 0 && args[0] == "--test")
     MonitorThrowDecision? throwDecision = testThrowDetector.Update(bladeHand, inputSink);
     if (throwDecision == null || throwDecision.Direction != MonitorThrowDirection.Right) throw new Exception("Monitor Throw Right failed to trigger.");
 
+    // Automated Unit Test 6: Rotary Volume Control via L-Gesture
+    Console.WriteLine("Testing VolumeDetector (L-Gesture Rotary Dial)...");
+    VolumeDetector testVolDetector = new();
+    TrackedHand lHand = new() { Gesture = "L" };
+    lHand.SmoothedLandmarks2D[0] = new Point2f(500, 500);  // Wrist
+    lHand.SmoothedLandmarks2D[2] = new Point2f(460, 470);  // Thumb MCP
+    lHand.SmoothedLandmarks2D[4] = new Point2f(420, 470);  // Thumb Tip (Points Left)
+    lHand.SmoothedLandmarks2D[5] = new Point2f(500, 430);  // Index MCP
+    lHand.SmoothedLandmarks2D[8] = new Point2f(500, 360);  // Index Tip (Points Up, Angle = -90 deg)
+    lHand.SmoothedLandmarks2D[9] = new Point2f(500, 430);
+    lHand.SmoothedLandmarks2D[12] = new Point2f(500, 470); // Middle Tip Curled
+    lHand.SmoothedLandmarks2D[13] = new Point2f(520, 440);
+    lHand.SmoothedLandmarks2D[16] = new Point2f(520, 480); // Ring Tip Curled
+    lHand.SmoothedLandmarks2D[17] = new Point2f(540, 450);
+    lHand.SmoothedLandmarks2D[20] = new Point2f(540, 490); // Pinky Tip Curled
+
+    audioSink.SetMasterVolume(0.50f);
+
+    // Frame 1: Engages L-gesture baseline
+    (bool volActive1, float vol1) = testVolDetector.Update(lHand, audioSink);
+    if (!volActive1 || !testVolDetector.State.IsActive) throw new Exception("VolumeDetector failed to engage on L-gesture.");
+
+    // Frame 2: Rotate index finger rightwards by ~45 degrees (clockwise rotation)
+    lHand.SmoothedLandmarks2D[8] = new Point2f(550, 380); // Tilted clockwise
+    (bool volActive2, float vol2) = testVolDetector.Update(lHand, audioSink);
+    if (!volActive2 || vol2 <= 0.50f) throw new Exception("VolumeDetector failed to increase volume on clockwise rotation.");
+
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -226,6 +258,7 @@ Console.WriteLine("  [W]         : Toggle Swipe Scrolling");
 Console.WriteLine("  [G]         : Toggle Real Window Grabbing & Pinch-Resizing");
 Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize)");
 Console.WriteLine("  [M]         : Toggle Multi-Monitor Throw (Blade Swipe)");
+Console.WriteLine("  [V]         : Toggle Volume Control (L-Gesture Rotary Dial)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
 Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
 Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
@@ -276,31 +309,37 @@ while (true)
     // 6. Process Multi-Monitor Window Throw (Edge-On Blade Swipe)
     monitorThrowController.Update(primaryHand);
 
-    // 7. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
+    // 7. Process System Master Volume Control (L-Gesture Rotary Dial)
+    volumeController.Update(primaryHand);
+
+    // 8. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 8. Render Hand Skeleton Bones Overlay
+    // 9. Render Hand Skeleton Bones Overlay
     renderer.Render(frame, trackedHands);
 
-    // 9. Render Mouse Click Feedback & Dwell Ring
+    // 10. Render Mouse Click Feedback & Dwell Ring
     mouseController.RenderFeedback(frame, primaryHand);
 
-    // 10. Render Swipe Scroll Feedback Arrows
+    // 11. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 11. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
+    // 12. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
     windowGrabController.RenderFeedback(frame);
 
-    // 12. Render Two-Hand Gesture Banner, Touch Link Line & Action Arrows
+    // 13. Render Two-Hand Gesture Banner, Touch Link Line & Action Arrows
     twoHandController.RenderFeedback(frame, trackedHands);
 
-    // 13. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
+    // 14. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
     monitorThrowController.RenderFeedback(frame, primaryHand);
 
-    // 14. Render Virtual Test Target Object
+    // 15. Render Holographic Rotary Volume Dial & Live Audio Gauge
+    volumeController.RenderFeedback(frame);
+
+    // 16. Render Virtual Test Target Object
     virtualObject.Render(frame);
 
-    // 15. Real-time FPS Calculation
+    // 17. Real-time FPS Calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -309,14 +348,14 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 16. Render Telemetry HUD
+    // 18. Render Telemetry HUD
     if (showHud)
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController);
     
-    // 17. Display Frame in OpenCV Window
+    // 19. Display Frame in OpenCV Window
     window.ShowImage(frame);
 
-    // 18. Handle Keyboard Hotkeys
+    // 20. Handle Keyboard Hotkeys
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
@@ -341,6 +380,10 @@ while (true)
     else if (key == 'm' || key == 'M')
     {
         monitorThrowController.Enabled = !monitorThrowController.Enabled;
+    }
+    else if (key == 'v' || key == 'V')
+    {
+        volumeController.Enabled = !volumeController.Enabled;
     }
     else if (key == 's' || key == 'S')
     {
@@ -369,9 +412,9 @@ Console.WriteLine("Shutting down NEXA Hand Tracking...");
 /// <summary>
 /// Draws the semi-transparent telemetry HUD card with live FPS, filter states, and controller status indicators.
 /// </summary>
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl)
 {
-    Rect hudRect = new(10, 10, 390, 166);
+    Rect hudRect = new(10, 10, 390, 184);
     using Mat overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
@@ -492,8 +535,29 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     Cv2.PutText(frame, $"Monitor (M): {throwStatus}", new Point(20, 138),
         HersheyFonts.HersheySimplex, 0.36, throwColor, 1, LineTypes.AntiAlias);
 
+    string volStatus;
+    Scalar volColor;
+    if (!volCtrl.Enabled)
+    {
+        volStatus = "AUS (Taste V)";
+        volColor = new Scalar(160, 160, 160);
+    }
+    else if (volCtrl.State.IsActive)
+    {
+        volStatus = $"Aktiv: {(int)(volCtrl.State.SmoothedVolume * 100)}% ({volCtrl.State.AngleDelta:+0;-0;0}°)";
+        volColor = new Scalar(0, 255, 120);
+    }
+    else
+    {
+        volStatus = "Bereit (L-Geste + Drehung)";
+        volColor = new Scalar(0, 255, 120);
+    }
+
+    Cv2.PutText(frame, $"Lautstaerke (V): {volStatus}", new Point(20, 156),
+        HersheyFonts.HersheySimplex, 0.36, volColor, 1, LineTypes.AntiAlias);
+
     string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
     string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
-    Cv2.PutText(frame, objStatus, new Point(20, 156),
+    Cv2.PutText(frame, objStatus, new Point(20, 174),
         HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }
