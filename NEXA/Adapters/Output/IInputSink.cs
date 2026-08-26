@@ -1,14 +1,12 @@
-using System;
-
 namespace NEXA.Adapters.Output;
 
 /// <summary>
-/// Output port abstraction interface for operating system input injection and window manipulation.
+/// Output port abstraction interface for operating system input injection, window manipulation, and centralized focus state.
 /// <para>
 /// <b>What it is:</b> A decoupled contract defining all physical hardware and OS commands that NEXA can issue.
 /// </para>
 /// <para>
-/// <b>What it does:</b> Provides unified methods for scrolling, cursor positioning, left-clicking, window relocation, and querying monitor metrics.
+/// <b>What it does:</b> Provides unified methods for scrolling, cursor positioning, left-clicking, window relocation, window maximization/minimization, and focus tracking.
 /// </para>
 /// <para>
 /// <b>Why it is used:</b> Shields domain logic and high-level controllers from platform-specific Win32 P/Invoke APIs, enabling mockability and automated unit testing.
@@ -50,6 +48,34 @@ public interface IInputSink
     /// </summary>
     /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
     void BringWindowToForeground(IntPtr hwnd);
+
+    /// <summary>
+    /// Maximizes the specified native OS application window to fill the monitor display.
+    /// </summary>
+    /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
+    void MaximizeWindow(IntPtr hwnd);
+
+    /// <summary>
+    /// Minimizes the specified native OS application window to the taskbar.
+    /// </summary>
+    /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
+    void MinimizeWindow(IntPtr hwnd);
+
+    /// <summary>
+    /// Restores the specified native OS application window to its normal un-maximized dimensions.
+    /// </summary>
+    /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
+    void RestoreWindow(IntPtr hwnd);
+
+    /// <summary>
+    /// Gets or sets the handle of the most recently focused/manipulated desktop window.
+    /// </summary>
+    IntPtr LastFocusedHwnd { get; set; }
+
+    /// <summary>
+    /// Gets or sets the title of the most recently focused/manipulated desktop window.
+    /// </summary>
+    string LastFocusedTitle { get; set; }
 
     /// <summary>
     /// Queries the primary display resolution of the active desktop.

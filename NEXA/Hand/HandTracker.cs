@@ -88,7 +88,7 @@ public class HandTracker : IDisposable
         List<PalmDetectionResult> palms = _palmDetector.Detect(frame);
         double timestamp = _stopwatch.Elapsed.TotalSeconds;
 
-        foreach (var palm in palms)
+        foreach (PalmDetectionResult palm in palms)
         {
             HandLandmarkResult? landmarkResult = _landmarkEstimator.Estimate(frame, palm);
             if (landmarkResult == null) continue;
@@ -127,7 +127,7 @@ public class HandTracker : IDisposable
         // Reset filter states when no hands are in the scene to prevent interpolation drift
         if (palms.Count == 0)
         {
-            foreach (var (x, y, z) in _filters.Values)
+            foreach ((OneEuroFilter x, OneEuroFilter y, OneEuroFilter z) in _filters.Values)
             {
                 x.Reset();
                 y.Reset();

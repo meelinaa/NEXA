@@ -64,7 +64,7 @@ public class MouseController
     public MouseController(IInputSink? inputSink = null)
     {
         _inputSink = inputSink ?? new Win32InputSink();
-        var (width, height) = _inputSink.GetScreenResolution();
+        (int width, int height) = _inputSink.GetScreenResolution();
         Detector = new DwellClickDetector(width, height);
     }
 
@@ -76,7 +76,7 @@ public class MouseController
     /// <param name="frameHeight">Height of the camera frame in pixels.</param>
     public void Update(TrackedHand? hand, int frameWidth, int frameHeight)
     {
-        var (moveX, moveY, shouldClick) = Detector.Update(hand, frameWidth, frameHeight);
+        (int? moveX, int? moveY, bool shouldClick) = Detector.Update(hand, frameWidth, frameHeight);
 
         if (moveX.HasValue && moveY.HasValue)
         {

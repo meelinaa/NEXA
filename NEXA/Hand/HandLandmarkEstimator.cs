@@ -78,7 +78,7 @@ public class HandLandmarkEstimator : IDisposable
     public HandLandmarkResult? Estimate(Mat frame, PalmDetectionResult palm)
     {
         // 1. Initial crop and square padding to allow full 360-degree in-plane rotation without clipping corners
-        var (crop1, palmBox1, bias1) = CropAndPadFromPalm(frame, palm.Box, forRotation: true);
+        (Mat crop1, Rect2f palmBox1, Point2f bias1) = CropAndPadFromPalm(frame, palm.Box, forRotation: true);
         using Mat? crop1Mat = crop1;
         using Mat rgbMat = new();
         Cv2.CvtColor(crop1Mat, rgbMat, ColorConversionCodes.BGR2RGB);
@@ -129,7 +129,7 @@ public class HandLandmarkEstimator : IDisposable
         Rect2f rotPalmBox = new(minX, minY, Math.Max(1f, maxX - minX), Math.Max(1f, maxY - minY));
 
         // 2. Crop the upright rotated hand and resize to 224x224 for neural network input
-        var (crop2, rotPalmBoxEnlarged, _) = CropAndPadFromPalm(rotatedImage, rotPalmBox, forRotation: false);
+        (Mat crop2, Rect2f rotPalmBoxEnlarged, _) = CropAndPadFromPalm(rotatedImage, rotPalmBox, forRotation: false);
         using Mat? crop2Mat = crop2;
         using Mat resizedCrop = new();
         Cv2.Resize(crop2Mat, resizedCrop, new Size(InputSize, InputSize), 0, 0, InterpolationFlags.Area);
@@ -158,7 +158,7 @@ public class HandLandmarkEstimator : IDisposable
         ];
 
         // 3. Execute ONNX landmark inference
-        using var outputs = _session.Run(inputs);
+        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
 
         float[] lmRaw = [];
         float[] worldLmRaw = [];
@@ -170,7 +170,7 @@ public class HandLandmarkEstimator : IDisposable
         // "Identity_1": Hand presence confidence score [1, 1]
         // "Identity_2": Handedness score [1, 1] (0.0 = Left, 1.0 = Right)
         // "Identity_3": 21 3D world metric landmarks in meters [1, 63]
-        foreach (var outVal in outputs)
+        foreach (NamedOnnxValue outVal in outputs)
         {
             if (outVal.Name == "Identity")
             {
@@ -300,7 +300,7 @@ public class HandLandmarkEstimator : IDisposable
         if (cropX + cropW > image.Width) cropW = image.Width - cropX;
         if (cropY + cropH > image.Height) cropH = image.Height - cropY;
 
-        var cropped = new Mat(image, new Rect(cropX, cropY, cropW, cropH)).Clone();
+        Mat cropped = new Mat(image, new Rect(cropX, cropY, cropW, cropH)).Clone();
 
         int sideLen = forRotation
             ? (int)Math.Ceiling(Math.Sqrt(cropW * cropW + cropH * cropH))

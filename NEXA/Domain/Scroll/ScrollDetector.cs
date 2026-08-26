@@ -126,7 +126,7 @@ public class ScrollDetector
         double sumTY = 0.0;
         double sumTT = 0.0;
 
-        foreach (var item in history)
+        foreach ((double Y, DateTime Time) item in history)
         {
             double t = (item.Time - referenceTime).TotalMilliseconds;
             double y = item.Y;
@@ -245,7 +245,7 @@ public class ScrollDetector
         State.LastSlope = slope;
         State.LastSpeed = speed;
 
-        var oldest = State.History.Peek();
+        (double Y, DateTime Time) oldest = State.History.Peek();
         double totalDisplacement = palmCenter.Y - oldest.Y;
         State.LastDeltaY = totalDisplacement;
 

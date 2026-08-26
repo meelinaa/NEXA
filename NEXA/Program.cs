@@ -8,6 +8,7 @@ using NEXA.Adapters.Output;
 using NEXA.Domain.Click;
 using NEXA.Domain.Grab;
 using NEXA.Domain.Scroll;
+using NEXA.Domain.TwoHand;
 using NEXA.Hand;
 using NEXA.Object;
 using OpenCvSharp;
@@ -52,12 +53,16 @@ VirtualObjectController virtualObject = new();
 MouseController mouseController = new(inputSink);
 ScrollController scrollController = new(inputSink);
 WindowGrabController windowGrabController = new(inputSink);
+TwoHandGestureController twoHandController = new(inputSink);
+
+// Wire 3-second post-fist window trigger
+windowGrabController.OnFistReleased += () => twoHandController.Detector.NotifyFistReleased();
 
 // 2. Automated Non-Interactive Test Mode (--test).
 if (args.Length > 0 && args[0] == "--test")
 {
     Console.WriteLine("Running in automated test mode (--test)...");
-    using var testFrame = new Mat(720, 1280, MatType.CV_8UC3, new Scalar(30, 30, 30));
+    using Mat testFrame = new(720, 1280, MatType.CV_8UC3, new Scalar(30, 30, 30));
     List<TrackedHand> results = tracker.ProcessFrame(testFrame);
     renderer.Render(testFrame, results);
     virtualObject.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
@@ -69,28 +74,61 @@ if (args.Length > 0 && args[0] == "--test")
     scrollController.RenderFeedback(testFrame);
     windowGrabController.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
     windowGrabController.RenderFeedback(testFrame);
+    twoHandController.Update(results);
+    twoHandController.RenderFeedback(testFrame, results);
 
-    // Automated Unit Test: WindowGrabDetector State-Machine Simulation
+    // Automated Unit Test 1: WindowGrabDetector State-Machine Simulation
     Console.WriteLine("Testing WindowGrabDetector state machine transitions...");
-    var testDetector = new WindowGrabDetector(1920, 1080);
-    var simulatedHand = new TrackedHand { Gesture = "Fist" };
+    WindowGrabDetector testDetector = new(1920, 1080);
+    TrackedHand simulatedHand = new() { Gesture = "Fist" };
     simulatedHand.SmoothedLandmarks2D[9] = new Point2f(640, 360);
 
-    // Step A: Initial update starts hold timer
     testDetector.Update(simulatedHand, 1280, 720, inputSink);
     if (testDetector.State.HoldDurationSeconds < 0) throw new Exception("Hold timer failed to start.");
 
-    // Step B: Simulate passing 2.0s hold threshold
     testDetector.State.RequiredHoldSeconds = 0.01;
     Thread.Sleep(20);
     testDetector.Update(simulatedHand, 1280, 720, inputSink);
-    // (If running on a desktop, it queries window; if none, it resets cleanly)
-
-    // Step C: Test Release
     testDetector.Reset();
     if (testDetector.State.IsGrabbed) throw new Exception("Reset failed.");
 
-    Console.WriteLine($"[PASS] Pipeline & State Machines executed cleanly. Detected hands: {results.Count}");
+    // Automated Unit Test 2: TwoHandGestureDetector (Maximize & Minimize Simulation)
+    Console.WriteLine("Testing TwoHandGestureDetector (Maximize & Minimize)...");
+    TwoHandGestureDetector testTwoHand = new();
+    inputSink.LastFocusedHwnd = new IntPtr(12345); // Mock valid target HWND
+
+    // Check gating: initially window should not be active
+    if (testTwoHand.State.IsWindowActive) throw new Exception("2-Hand window should be inactive before fist release.");
+
+    // Trigger fist release
+    testTwoHand.NotifyFistReleased();
+    if (!testTwoHand.State.IsWindowActive) throw new Exception("2-Hand window should be active after fist release.");
+
+    // Simulate 2 hands for Maximize (Touch -> Apart)
+    TrackedHand h1 = new();
+    TrackedHand h2 = new();
+    h1.SmoothedLandmarks2D[8] = new Point2f(600, 300); // Index 1
+    h2.SmoothedLandmarks2D[8] = new Point2f(615, 300); // Index 2 (Touch distance = 15px)
+    h1.SmoothedLandmarks2D[0] = new Point2f(600, 400); h1.SmoothedLandmarks2D[9] = new Point2f(600, 350);
+    h2.SmoothedLandmarks2D[0] = new Point2f(615, 400); h2.SmoothedLandmarks2D[9] = new Point2f(615, 350);
+
+    List<TrackedHand> twoHandsList = new() { h1, h2 };
+
+    // Frame 1 & 2: Touch initiation
+    testTwoHand.Update(twoHandsList, inputSink);
+    testTwoHand.Update(twoHandsList, inputSink);
+    if (!testTwoHand.State.IsTouchActive) throw new Exception("Touch anchor should be active.");
+
+    // Frame 3: Move apart horizontally
+    h1.SmoothedLandmarks2D[8] = new Point2f(500, 300);
+    h2.SmoothedLandmarks2D[8] = new Point2f(720, 300); // Distance = 220px (>45% expansion)
+    TwoHandGestureDecision? maxDecision = testTwoHand.Update(twoHandsList, inputSink);
+    if (maxDecision == null || maxDecision.Action != TwoHandAction.Maximize) throw new Exception("Maximize gesture failed to trigger.");
+
+    // Verify cooldown
+    if (!testTwoHand.State.InCooldown) throw new Exception("Cooldown should be active after trigger.");
+
+    Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
 
@@ -120,6 +158,7 @@ Console.WriteLine("  [ESC] / [Q] : Exit application");
 Console.WriteLine("  [C]         : Toggle Mouse Navigation & Dwell-Click");
 Console.WriteLine("  [W]         : Toggle Swipe Scrolling");
 Console.WriteLine("  [G]         : Toggle Real Window Grabbing");
+Console.WriteLine("  [T]         : Toggle 2-Hand Gestures (Maximize/Minimize)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
 Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
 Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
@@ -164,25 +203,31 @@ while (true)
     // 4. Process Real Windows OS Window Grabbing & Delta Relocation
     windowGrabController.Update(primaryHand, frame.Width, frame.Height);
 
-    // 5. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
+    // 5. Process Two-Hand Window Gestures (Maximize / Minimize in 3s Window)
+    twoHandController.Update(trackedHands);
+
+    // 6. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 6. Render Hand Skeleton Bones Overlay
+    // 7. Render Hand Skeleton Bones Overlay
     renderer.Render(frame, trackedHands);
 
-    // 7. Render Mouse Click Feedback & Dwell Ring
+    // 8. Render Mouse Click Feedback & Dwell Ring
     mouseController.RenderFeedback(frame, primaryHand);
 
-    // 8. Render Swipe Scroll Feedback Arrows
+    // 9. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 9. Render Real Window Grab Feedback & Corner Brackets
+    // 10. Render Real Window Grab Feedback & Corner Brackets
     windowGrabController.RenderFeedback(frame);
 
-    // 10. Render Virtual Test Target Object
+    // 11. Render Two-Hand Gesture Banner, Touch Link Line & Action Arrows
+    twoHandController.RenderFeedback(frame, trackedHands);
+
+    // 12. Render Virtual Test Target Object
     virtualObject.Render(frame);
 
-    // 11. Real-time FPS Calculation
+    // 13. Real-time FPS Calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -191,14 +236,14 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 12. Render Telemetry HUD
+    // 14. Render Telemetry HUD
     if (showHud)
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController);
     
-    // 13. Display Frame in OpenCV Window
+    // 15. Display Frame in OpenCV Window
     window.ShowImage(frame);
 
-    // 14. Handle Keyboard Hotkeys
+    // 16. Handle Keyboard Hotkeys
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
@@ -215,6 +260,10 @@ while (true)
     else if (key == 'g' || key == 'G')
     {
         windowGrabController.Enabled = !windowGrabController.Enabled;
+    }
+    else if (key == 't' || key == 'T')
+    {
+        twoHandController.Enabled = !twoHandController.Enabled;
     }
     else if (key == 's' || key == 'S')
     {
@@ -243,9 +292,9 @@ Console.WriteLine("Shutting down NEXA Hand Tracking...");
 /// <summary>
 /// Draws the semi-transparent telemetry HUD card with live FPS, filter states, and controller status indicators.
 /// </summary>
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl)
 {
-    Rect hudRect = new(10, 10, 390, 130);
+    Rect hudRect = new(10, 10, 390, 148);
     using Mat overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
@@ -320,8 +369,34 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     Cv2.PutText(frame, $"Fenster (G): {winGrabStatus}", new Point(20, 102),
         HersheyFonts.HersheySimplex, 0.36, winGrabColor, 1, LineTypes.AntiAlias);
 
+    string twoHandStatus;
+    Scalar twoHandColor;
+    if (!twoHandCtrl.Enabled)
+    {
+        twoHandStatus = "AUS (Taste T)";
+        twoHandColor = new Scalar(160, 160, 160);
+    }
+    else if (twoHandCtrl.State.InCooldown)
+    {
+        twoHandStatus = $"Cooldown ({twoHandCtrl.State.LastAction})";
+        twoHandColor = new Scalar(0, 180, 255);
+    }
+    else if (twoHandCtrl.State.IsWindowActive)
+    {
+        twoHandStatus = $"Bereit ({twoHandCtrl.State.RemainingWindowSeconds:F1}s)";
+        twoHandColor = new Scalar(0, 255, 120);
+    }
+    else
+    {
+        twoHandStatus = "Gesperrt (Erst Faust loslassen)";
+        twoHandColor = new Scalar(120, 120, 120);
+    }
+
+    Cv2.PutText(frame, $"Zwei-Hand (T): {twoHandStatus}", new Point(20, 120),
+        HersheyFonts.HersheySimplex, 0.36, twoHandColor, 1, LineTypes.AntiAlias);
+
     string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
     string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
-    Cv2.PutText(frame, objStatus, new Point(20, 120),
+    Cv2.PutText(frame, objStatus, new Point(20, 138),
         HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }

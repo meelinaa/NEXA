@@ -238,7 +238,7 @@ public class VirtualObjectController
         }
 
         // 1. Semi-transparent backdrop
-        using (var overlay = frame.Clone())
+        using (Mat overlay = frame.Clone())
         {
             Cv2.Rectangle(overlay, rect, new Scalar(18, 18, 26), -1);
             Cv2.AddWeighted(overlay, 0.40, frame, 0.60, 0, frame);

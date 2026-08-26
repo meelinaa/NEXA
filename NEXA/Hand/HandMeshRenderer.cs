@@ -68,12 +68,12 @@ public class HandMeshRenderer
         if (hands == null || hands.Count == 0)
             return;
 
-        foreach (var hand in hands)
+        foreach (TrackedHand hand in hands)
         {
-            var pts = hand.SmoothedLandmarks2D;
+            Point2f[] pts = hand.SmoothedLandmarks2D;
 
             // 1. Draw crisp glowing bone connection lines (neon green with bright core)
-            foreach (var (start, end) in BoneConnections)
+            foreach ((int start, int end) in BoneConnections)
             {
                 Point p1 = new((int)Math.Round(pts[start].X), (int)Math.Round(pts[start].Y));
                 Point p2 = new((int)Math.Round(pts[end].X), (int)Math.Round(pts[end].Y));

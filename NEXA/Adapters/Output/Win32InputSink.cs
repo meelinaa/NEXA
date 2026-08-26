@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -14,8 +13,8 @@ namespace NEXA.Adapters.Output;
 /// <list type="bullet">
 /// <item><description>Translates virtual cursor positions into Windows system cursor moves via <c>SetCursorPos</c>.</description></item>
 /// <item><description>Constructs and dispatches synthesized mouse clicks and mouse wheel rotation events via <c>SendInput</c>.</description></item>
-/// <item><description>Relocates OS application windows smoothly via <c>SetWindowPos</c> and brings them to the foreground via <c>SetForegroundWindow</c>.</description></item>
-/// <item><description>Queries top-level window handles at arbitrary coordinates and inspects window titles and bounds.</description></item>
+/// <item><description>Relocates OS application windows via <c>SetWindowPos</c> and changes window states via <c>ShowWindow</c> (Maximize, Minimize, Restore).</description></item>
+/// <item><description>Maintains a centralized <see cref="LastFocusedHwnd"/> and <see cref="LastFocusedTitle"/> context across all features.</description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -48,6 +47,9 @@ public class Win32InputSink : IInputSink
     private static extern bool BringWindowToTop(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr WindowFromPoint(POINT point);
 
     [DllImport("user32.dll")]
@@ -75,6 +77,10 @@ public class Win32InputSink : IInputSink
     private const int SM_CYSCREEN = 1; // System metric index for primary monitor height
 
     private const uint GA_ROOT = 2; // Retrieves the root window by walking the chain of parent windows
+
+    private const int SW_MAXIMIZE = 3; // Maximizes the specified window
+    private const int SW_MINIMIZE = 6; // Minimizes the specified window
+    private const int SW_RESTORE = 9;  // Restores the window to its original size and position
 
     private const uint INPUT_MOUSE = 0;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -122,6 +128,12 @@ public class Win32InputSink : IInputSink
     #endregion
 
     /// <inheritdoc/>
+    public IntPtr LastFocusedHwnd { get; set; } = IntPtr.Zero;
+
+    /// <inheritdoc/>
+    public string LastFocusedTitle { get; set; } = string.Empty;
+
+    /// <inheritdoc/>
     public void MoveCursor(int x, int y)
     {
         SetCursorPos(x, y);
@@ -130,7 +142,7 @@ public class Win32InputSink : IInputSink
     /// <inheritdoc/>
     public void Click()
     {
-        var inputs = new INPUT[]
+        INPUT[] inputs = new INPUT[]
         {
             new() { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTDOWN } },
             new() { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTUP } }
@@ -141,7 +153,7 @@ public class Win32InputSink : IInputSink
     /// <inheritdoc/>
     public void Scroll(int wheelDelta)
     {
-        var inputs = new INPUT[]
+        INPUT[] inputs = new INPUT[]
         {
             new()
             {
@@ -159,16 +171,42 @@ public class Win32InputSink : IInputSink
     /// <inheritdoc/>
     public void MoveWindow(IntPtr hwnd, int x, int y)
     {
-        if (hwnd == IntPtr.Zero) return;
+        if (hwnd == IntPtr.Zero) 
+            return;
         SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     /// <inheritdoc/>
     public void BringWindowToForeground(IntPtr hwnd)
     {
-        if (hwnd == IntPtr.Zero) return;
+        if (hwnd == IntPtr.Zero)
+            return;
         BringWindowToTop(hwnd);
         SetForegroundWindow(hwnd);
+    }
+
+    /// <inheritdoc/>
+    public void MaximizeWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) 
+            return;
+        ShowWindow(hwnd, SW_MAXIMIZE);
+    }
+
+    /// <inheritdoc/>
+    public void MinimizeWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) 
+            return;
+        ShowWindow(hwnd, SW_MINIMIZE);
+    }
+
+    /// <inheritdoc/>
+    public void RestoreWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+        ShowWindow(hwnd, SW_RESTORE);
     }
 
     /// <inheritdoc/>
@@ -184,7 +222,7 @@ public class Win32InputSink : IInputSink
     /// <inheritdoc/>
     public IntPtr GetWindowAt(int screenX, int screenY)
     {
-        var pt = new POINT { x = screenX, y = screenY };
+        POINT pt = new() { x = screenX, y = screenY };
         IntPtr hwnd = WindowFromPoint(pt);
         if (hwnd == IntPtr.Zero) return IntPtr.Zero;
 
@@ -206,7 +244,7 @@ public class Win32InputSink : IInputSink
             return IntPtr.Zero;
         }
 
-        var className = new StringBuilder(256);
+        StringBuilder className = new(256);
         GetClassName(hwnd, className, className.Capacity);
         string cls = className.ToString();
 
@@ -216,7 +254,7 @@ public class Win32InputSink : IInputSink
             return IntPtr.Zero;
         }
 
-        var titleBuilder = new StringBuilder(256);
+        StringBuilder titleBuilder = new(256);
         int titleLen = GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
         if (titleLen == 0)
         {
@@ -244,7 +282,7 @@ public class Win32InputSink : IInputSink
         width = Math.Max(1, rect.Right - rect.Left);
         height = Math.Max(1, rect.Bottom - rect.Top);
 
-        var sb = new StringBuilder(512);
+        StringBuilder sb = new(512);
         GetWindowText(hwnd, sb, sb.Capacity);
         title = sb.ToString();
 

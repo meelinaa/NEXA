@@ -16,14 +16,9 @@ namespace NEXA.Domain.Grab;
 /// <item><description>Initializes the <see cref="WindowGrabDetector"/> with screen resolution obtained from <see cref="IInputSink.GetScreenResolution"/>.</description></item>
 /// <item><description>Brings the grabbed window to the foreground via <see cref="IInputSink.BringWindowToForeground"/> upon latching.</description></item>
 /// <item><description>Invokes <see cref="IInputSink.MoveWindow"/> when a window is grabbed and moved.</description></item>
+/// <item><description>Raises <see cref="OnFistReleased"/> when a grabbed window is released to initiate downstream windows like Two-Hand action windows.</description></item>
 /// <item><description>Inverse-projects desktop window bounds into camera space via <see cref="WindowGrabDetector.MapFromScreen"/> to draw glowing corner brackets and metadata tags.</description></item>
 /// </list>
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> Connects the abstract domain detector to concrete platform inputs while keeping the main frame loop in <c>Program.cs</c> clean.
-/// </para>
-/// <para>
-/// <b>Consequence:</b> Provides an intuitive, responsive, augmented-reality window manipulation experience.
 /// </para>
 /// </summary>
 public class WindowGrabController
@@ -37,6 +32,16 @@ public class WindowGrabController
     /// Track the HWND that was activated to ensure BringWindowToForeground is called once per grab cycle.
     /// </summary>
     private IntPtr _lastForegroundHwnd = IntPtr.Zero;
+
+    /// <summary>
+    /// Flag tracking whether the grab was active in the previous frame to detect release transitions.
+    /// </summary>
+    private bool _wasGrabbedLastFrame = false;
+
+    /// <summary>
+    /// Event fired immediately when a fist-grab gesture is released.
+    /// </summary>
+    public event Action? OnFistReleased;
 
     /// <summary>
     /// The core domain detector handling hold timing, coordinate mapping, and delta dragging.
@@ -64,7 +69,7 @@ public class WindowGrabController
     public WindowGrabController(IInputSink? inputSink = null)
     {
         _inputSink = inputSink ?? new Win32InputSink();
-        var (width, height) = _inputSink.GetScreenResolution();
+        (int width, int height) = _inputSink.GetScreenResolution();
         Detector = new WindowGrabDetector(width, height);
     }
 
@@ -76,21 +81,29 @@ public class WindowGrabController
     /// <param name="frameHeight">Height of the camera frame in pixels.</param>
     public void Update(TrackedHand? hand, int frameWidth, int frameHeight)
     {
-        var (isGrabbed, hwnd, targetX, targetY) = Detector.Update(hand, frameWidth, frameHeight, _inputSink);
+        (bool isGrabbed, IntPtr hwnd, int targetX, int targetY) = Detector.Update(hand, frameWidth, frameHeight, _inputSink);
 
         if (isGrabbed && hwnd != IntPtr.Zero)
         {
-            // Bring window to foreground once at grab start
+            // Bring window to foreground and record focus once at grab start
             if (_lastForegroundHwnd != hwnd)
             {
                 _inputSink.BringWindowToForeground(hwnd);
                 _lastForegroundHwnd = hwnd;
+                _inputSink.LastFocusedHwnd = hwnd;
+                _inputSink.LastFocusedTitle = State.CachedWindowTitle;
             }
 
             _inputSink.MoveWindow(hwnd, targetX, targetY);
+            _wasGrabbedLastFrame = true;
         }
         else
         {
+            if (_wasGrabbedLastFrame)
+            {
+                OnFistReleased?.Invoke();
+                _wasGrabbedLastFrame = false;
+            }
             _lastForegroundHwnd = IntPtr.Zero;
         }
     }
@@ -108,7 +121,7 @@ public class WindowGrabController
             int radius = 32;
             int angle = (int)(progress * 360);
 
-            var pt = new Point((int)Math.Round(State.LastPalmCenter.X), (int)Math.Round(State.LastPalmCenter.Y));
+            Point pt = new((int)Math.Round(State.LastPalmCenter.X), (int)Math.Round(State.LastPalmCenter.Y));
 
             Cv2.Circle(frame, pt, radius, new Scalar(40, 40, 55), 2, LineTypes.AntiAlias);
             Cv2.Ellipse(frame, pt, new Size(radius, radius), -90, 0, angle, new Scalar(0, 165, 255), 3, LineTypes.AntiAlias);
@@ -123,8 +136,8 @@ public class WindowGrabController
         if (State.IsGrabbed && State.InitialWindowBounds.Width > 0 && State.InitialWindowBounds.Height > 0)
         {
             // Project Top-Left and Bottom-Right desktop bounds back to camera pixel coordinates
-            var (camLeft, camTop) = Detector.MapFromScreen(State.CurrentTargetX, State.CurrentTargetY, frame.Width, frame.Height);
-            var (camRight, camBottom) = Detector.MapFromScreen(
+            (float camLeft, float camTop) = Detector.MapFromScreen(State.CurrentTargetX, State.CurrentTargetY, frame.Width, frame.Height);
+            (float camRight, float camBottom) = Detector.MapFromScreen(
                 State.CurrentTargetX + State.InitialWindowBounds.Width,
                 State.CurrentTargetY + State.InitialWindowBounds.Height,
                 frame.Width, frame.Height);
@@ -134,17 +147,17 @@ public class WindowGrabController
             int w = (int)Math.Round(camRight - camLeft);
             int h = (int)Math.Round(camBottom - camTop);
 
-            var boxRect = new Rect(
+            Rect boxRect = new(
                 Math.Clamp(x, 2, frame.Width - 10),
                 Math.Clamp(y, 2, frame.Height - 10),
                 Math.Clamp(w, 20, frame.Width - 4),
                 Math.Clamp(h, 20, frame.Height - 4)
             );
 
-            var themeColor = new Scalar(0, 100, 255); // Glowing Orange / Red
+            Scalar themeColor = new(0, 100, 255); // Glowing Orange / Red
 
             // Translucent backdrop
-            using (var overlay = frame.Clone())
+            using (Mat overlay = frame.Clone())
             {
                 Cv2.Rectangle(overlay, boxRect, new Scalar(15, 15, 25), -1);
                 Cv2.AddWeighted(overlay, 0.35, frame, 0.65, 0, frame);

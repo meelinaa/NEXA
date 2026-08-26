@@ -80,7 +80,7 @@ public class ScrollController(IInputSink? inputSink = null)
     /// </summary>
     public void UpdateMomentum()
     {
-        var decision = Detector.UpdateMomentum();
+        ScrollDecision? decision = Detector.UpdateMomentum();
         if (decision != null)
         {
             _inputSink.Scroll(decision.WheelDelta);
@@ -93,7 +93,7 @@ public class ScrollController(IInputSink? inputSink = null)
     /// <param name="hand">The tracked hand instance.</param>
     public void Update(TrackedHand? hand)
     {
-        var decision = Detector.Update(hand);
+        ScrollDecision? decision = Detector.Update(hand);
         if (decision != null)
         {
             _inputSink.Scroll(decision.WheelDelta);
@@ -115,7 +115,7 @@ public class ScrollController(IInputSink? inputSink = null)
             int y = (int)Detector.LastSwipePoint.Y;
 
             bool isUp = Detector.LastSwipeDirection == "UP";
-            var color = Detector.LastInitialVelocity >= 100
+            Scalar color = Detector.LastInitialVelocity >= 100
                 ? new Scalar(0, 100, 255)  // High velocity: Orange/Red
                 : new Scalar(0, 240, 255); // Normal velocity: Cyan/Yellow
 

@@ -122,10 +122,10 @@ public class WindowGrabDetector
 
         // Hand is actively making a fist
         State.ReleaseTimer.Reset();
-        var palmCenter = hand!.SmoothedLandmarks2D[9]; // Palm center (Middle finger MCP)
+        Point2f palmCenter = hand!.SmoothedLandmarks2D[9]; // Palm center (Middle finger MCP)
         State.LastPalmCenter = palmCenter;
 
-        var (screenX, screenY) = MapToScreen(palmCenter.X, palmCenter.Y, frameWidth, frameHeight);
+        (double screenX, double screenY) = MapToScreen(palmCenter.X, palmCenter.Y, frameWidth, frameHeight);
         int currentHandX = (int)Math.Round(screenX);
         int currentHandY = (int)Math.Round(screenY);
 

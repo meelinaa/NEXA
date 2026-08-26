@@ -92,7 +92,7 @@ public class DwellClickDetector(int screenWidth, int screenHeight)
         }
 
         string currentGesture = hand.Gesture;
-        var indexTip = hand.SmoothedLandmarks2D[8]; // Landmark 8 = Index fingertip
+        Point2f indexTip = hand.SmoothedLandmarks2D[8]; // Landmark 8 = Index fingertip
 
         // Pointer navigation is strictly active only during the "Pointing" gesture
         if (currentGesture != "Pointing")
@@ -102,7 +102,7 @@ public class DwellClickDetector(int screenWidth, int screenHeight)
         }
 
         LastPointerActiveTime = DateTime.Now;
-        var (targetX, targetY) = MapToScreen(indexTip.X, indexTip.Y, frameWidth, frameHeight);
+        (double targetX, double targetY) = MapToScreen(indexTip.X, indexTip.Y, frameWidth, frameHeight);
 
         // 1. Dynamic smoothing with stillness deadzone to eliminate webcam tremor
         if (!_hasInitializedPos)

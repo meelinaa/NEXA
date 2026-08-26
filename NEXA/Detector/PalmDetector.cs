@@ -205,7 +205,7 @@ public class PalmDetector : IDisposable
             NamedOnnxValue.CreateFromTensor("input_1", tensor)
         ];
 
-        using var outputs = _session.Run(inputs);
+        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
 
         float[] boxData = [];
         float[] scoreData = [];
@@ -213,7 +213,7 @@ public class PalmDetector : IDisposable
         // Extract output tensors:
         // "Identity" contains bounding box deltas and 7 palm keypoint offsets [1, 2016, 18]
         // "Identity_1" contains raw classification logits [1, 2016, 1]
-        foreach (var output in outputs)
+        foreach (NamedOnnxValue output in outputs)
         {
             if (output.Name == "Identity")
             {
@@ -287,7 +287,7 @@ public class PalmDetector : IDisposable
         // 7. Collect and assemble final filtered detection results
         foreach (int idx in indices)
         {
-            var r = candidateBoxes[idx];
+            Rect2d r = candidateBoxes[idx];
             results.Add(new PalmDetectionResult
             {
                 Box = new Rect2f((float)r.X, (float)r.Y, (float)r.Width, (float)r.Height),
