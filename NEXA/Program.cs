@@ -1,16 +1,23 @@
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using NEXA;
+using NEXA.Adapters.Output;
+using NEXA.Domain.Click;
+using NEXA.Domain.Scroll;
 using NEXA.Hand;
 using NEXA.Object;
 using OpenCvSharp;
+using System.Diagnostics;
 
-Console.WriteLine("==================================================");
-Console.WriteLine("  N.E.X.A. - MediaPipe Hand Tracking (ONNX + OpenCV)");
-Console.WriteLine("==================================================");
+int webcamIndex = 0; // Index 0 = Webcam. Change if external camera is used.
 
+// ====================================================================================================
+// N.E.X.A. - Neural EXtended Augmented-Reality Gesture Controller (MediaPipe ONNX + OpenCV + Win32)
+// Main Application Entry Point and Video Pipeline Loop
+// ====================================================================================================
+
+Console.WriteLine("==============================");
+Console.WriteLine("  N.E.X.A. - Hand Tracking");
+Console.WriteLine("==============================");
+
+// Resolve ONNX model file paths
 string palmModelPath = Path.Combine(AppContext.BaseDirectory, "models", "palm_detection.onnx");
 string landmarkModelPath = Path.Combine(AppContext.BaseDirectory, "models", "handpose_estimation.onnx");
 
@@ -30,17 +37,24 @@ if (!File.Exists(palmModelPath) || !File.Exists(landmarkModelPath))
 }
 
 Console.WriteLine("Loading MediaPipe ONNX Models...");
-using var tracker = new HandTracker(palmModelPath, landmarkModelPath);
-var renderer = new HandMeshRenderer();
-var virtualObject = new VirtualObjectController();
-var mouseController = new MouseController();
-var scrollController = new ScrollController();
 
+// 1. Initialize Pipeline & Output Adapters
+using HandTracker tracker = new(palmModelPath, landmarkModelPath);
+Win32InputSink inputSink = new();
+HandMeshRenderer renderer = new();
+VirtualObjectController virtualObject = new();
+MouseController mouseController = new(inputSink);
+ScrollController scrollController = new(inputSink);
+
+// 2. Automated Non-Interactive Test Mode (--test). Its for automatically running the application without any user interaction.
+// This is used to test the application without any user interaction.
+// It is also used to test the application on different cameras.
+// It is also used to test the application on different models.
 if (args.Length > 0 && args[0] == "--test")
 {
     Console.WriteLine("Running in automated test mode (--test)...");
     using var testFrame = new Mat(720, 1280, MatType.CV_8UC3, new Scalar(30, 30, 30));
-    var results = tracker.ProcessFrame(testFrame);
+    List<TrackedHand> results = tracker.ProcessFrame(testFrame);
     renderer.Render(testFrame, results);
     virtualObject.Update(results.FirstOrDefault(), testFrame.Width, testFrame.Height);
     virtualObject.Render(testFrame);
@@ -53,8 +67,9 @@ if (args.Length > 0 && args[0] == "--test")
     return;
 }
 
-Console.WriteLine("Opening Camera (Index 0)...");
-using var capture = new VideoCapture(0, VideoCaptureAPIs.ANY);
+// 3. Open Video Capture (Webcam Index 0)
+Console.WriteLine("Opening Camera (Index 0)..."); // Index 0 = Webcam. Change if external camera is used.
+using VideoCapture capture = new(webcamIndex, VideoCaptureAPIs.ANY);
 
 if (!capture.IsOpened())
 {
@@ -64,47 +79,51 @@ if (!capture.IsOpened())
     return;
 }
 
-// Request optimal camera settings
+// Configure optimal camera streaming settings
 capture.Set(VideoCaptureProperties.FrameWidth, 1280);
 capture.Set(VideoCaptureProperties.FrameHeight, 720);
 capture.Set(VideoCaptureProperties.Fps, 30);
 
 const string windowName = "NEXA - MediaPipe Hand Tracking [ONNX]";
-using var window = new Window(windowName, WindowFlags.AutoSize);
-using var frame = new Mat();
+using Window window = new(windowName, WindowFlags.AutoSize);
+using Mat frame = new();
 
 Console.WriteLine("\nControls:");
-Console.WriteLine("  [ESC] / [Q] : Beenden");
-Console.WriteLine("  [C]         : Maus-Steuerung Ein-/Ausschalten");
-Console.WriteLine("  [W]         : Wisch-Scrollen Ein-/Ausschalten");
-Console.WriteLine("  [S]         : Glättung Umschalten (Smooth vs Frame-Direct)");
-Console.WriteLine("  [J]         : Gelenkpunkte (Joints) Umschalten");
-Console.WriteLine("  [B]         : Bounding-Box & Gesten-Tag Umschalten");
-Console.WriteLine("  [R]         : Virtuelles Objekt zurücksetzen (Pos & Zoom)");
-Console.WriteLine("  [H]         : HUD-Overlay Umschalten\n");
+Console.WriteLine("  [ESC] / [Q] : Exit application");
+Console.WriteLine("  [C]         : Toggle Mouse Navigation & Dwell-Click");
+Console.WriteLine("  [W]         : Toggle Swipe Scrolling");
+Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
+Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
+Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
+Console.WriteLine("  [R]         : Reset Virtual Object (Pos & Zoom)");
+Console.WriteLine("  [H]         : Toggle Telemetry HUD Overlay\n");
 
 int frameCount = 0;
 double currentFps = 0.0;
-var fpsStopwatch = Stopwatch.StartNew();
-var frameStopwatch = new Stopwatch();
+Stopwatch fpsStopwatch = Stopwatch.StartNew();
+Stopwatch frameStopwatch = new();
 bool showHud = true;
 
+// ====================================================================================================
+// Real-Time Frame Processing Loop
+// ====================================================================================================
 while (true)
 {
     frameStopwatch.Restart();
 
+    // Read latest camera frame
     if (!capture.Read(frame) || frame.Empty())
     {
         Cv2.WaitKey(10);
         continue;
     }
 
-    // Mirror image for intuitive selfie view
+    // Mirror image for intuitive selfie interaction
     Cv2.Flip(frame, frame, FlipMode.Y);
 
-    // 1. Process Hand Tracking
-    var trackedHands = tracker.ProcessFrame(frame);
-    var primaryHand = trackedHands.FirstOrDefault();
+    // 1. Process Multi-Stage ML Hand Tracking & Filtering
+    List<TrackedHand> trackedHands = tracker.ProcessFrame(frame);
+    TrackedHand? primaryHand = trackedHands.FirstOrDefault();
 
     // 2. Process Mouse Movement & Dwell Click
     mouseController.Update(primaryHand, frame.Width, frame.Height);
@@ -117,7 +136,7 @@ while (true)
     // 4. Process Relative Grab & Zoom on Virtual Object
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 5. Render Hand Skeleton Bones
+    // 5. Render Hand Skeleton Bones Overlay
     renderer.Render(frame, trackedHands);
 
     // 6. Render Mouse Click Feedback & Dwell Ring
@@ -126,10 +145,10 @@ while (true)
     // 7. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 8. Render Virtual Test Target (Grab & Zoom Object)
+    // 8. Render Virtual Test Target Object
     virtualObject.Render(frame);
 
-    // 9. FPS calculation
+    // 9. Real-time FPS Calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -138,16 +157,14 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 10. Render HUD
+    // 10. Render Telemetry HUD
     if (showHud)
-    {
         DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController);
-    }
-
-    // 11. Display Frame
+    
+    // 11. Display Frame in OpenCV Window
     window.ShowImage(frame);
 
-    // 12. Handle User Input
+    // 12. Handle Keyboard Hotkeys
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
@@ -185,10 +202,13 @@ while (true)
 
 Console.WriteLine("Shutting down NEXA Hand Tracking...");
 
+/// <summary>
+/// Draws the semi-transparent telemetry HUD card with live FPS, filter states, and controller status indicators.
+/// </summary>
 static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl)
 {
-    var hudRect = new Rect(10, 10, 370, 110);
-    using var overlay = frame.Clone();
+    Rect hudRect = new(10, 10, 370, 110);
+    using Mat overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
     Cv2.Rectangle(frame, hudRect, new Scalar(0, 220, 255), 1);
@@ -204,7 +224,7 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
             ? $"Verweilklick: {(int)(mouseCtrl.DwellState.HoverProgress * 100)}%"
             : "Aktiv (Zeigen)")
         : "AUS (Taste C)";
-    var mouseColor = mouseCtrl.Enabled ? new Scalar(0, 255, 120) : new Scalar(160, 160, 160);
+    Scalar mouseColor = mouseCtrl.Enabled ? new Scalar(0, 255, 120) : new Scalar(160, 160, 160);
 
     Cv2.PutText(frame, $"Maus (C): {mouseStatus}", new Point(20, 66),
         HersheyFonts.HersheySimplex, 0.36, mouseColor, 1, LineTypes.AntiAlias);

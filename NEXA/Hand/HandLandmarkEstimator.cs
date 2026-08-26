@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using NEXA.Detector;
@@ -7,10 +8,42 @@ using OpenCvSharp;
 
 namespace NEXA.Hand;
 
+/// <summary>
+/// Stage 2 Hand Landmark Estimator model based on Google MediaPipe HandPose architecture running via ONNX Runtime.
+/// <para>
+/// <b>What it is:</b> A high-precision deep learning regressor that estimates 21 anatomical 3D finger joints from an isolated hand crop.
+/// </para>
+/// <para>
+/// <b>What it does:</b>
+/// <list type="number">
+/// <item><description>Extracts the detected palm bounding box and computes the 2D roll angle between wrist and middle finger MCP joint.</description></item>
+/// <item><description>Rotates and letterboxes the hand crop to align the hand vertically upright (224x224 input tensor).</description></item>
+/// <item><description>Runs ONNX neural network inference to predict 21 3D joint coordinates, hand presence score, handedness (left/right), and world metric coordinates.</description></item>
+/// <item><description>Applies inverse affine transformation matrices to un-rotate and map coordinates back into original camera image space.</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>Why it is used:</b> The neural network is trained exclusively on upright canonical hand crops; rotating the hand beforehand ensures reliable landmark detection regardless of how the user tilts or turns their wrist in 3D space.
+/// </para>
+/// <para>
+/// <b>Consequence:</b> Yields millimeter-accurate 2D/3D skeleton joints suitable for gesture classification, mouse pointing, and 3D interaction.
+/// </para>
+/// </summary>
 public class HandLandmarkEstimator : IDisposable
 {
+    /// <summary>
+    /// The active ONNX Runtime inference engine holding the handpose_estimation.onnx neural network in memory.
+    /// </summary>
     private readonly InferenceSession _session;
+
+    /// <summary>
+    /// Minimum confidence threshold (0.0f to 1.0f) required to accept the estimated landmarks as valid.
+    /// </summary>
     private readonly float _confThreshold;
+
+    /// <summary>
+    /// Fixed input resolution (224x224) required by the MediaPipe Hand Landmark ONNX model tensor shape [1, 224, 224, 3].
+    /// </summary>
     private const int InputSize = 224;
 
     private static readonly float[] PalmBoxPreShift = { 0f, 0f };
@@ -20,10 +53,15 @@ public class HandLandmarkEstimator : IDisposable
     private static readonly float[] HandBoxShift = { 0f, -0.1f };
     private const float HandBoxEnlarge = 1.65f;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HandLandmarkEstimator"/> class, configuring the ONNX inference session.
+    /// </summary>
+    /// <param name="modelPath">The file path to the handpose_estimation.onnx model.</param>
+    /// <param name="confThreshold">Minimum presence confidence threshold (default: 0.7f).</param>
     public HandLandmarkEstimator(string modelPath, float confThreshold = 0.7f)
     {
         _confThreshold = confThreshold;
-        var options = new SessionOptions
+        SessionOptions options = new() 
         {
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
@@ -31,32 +69,39 @@ public class HandLandmarkEstimator : IDisposable
         _session = new InferenceSession(modelPath, options);
     }
 
+    /// <summary>
+    /// Estimates 21 3D finger landmarks for a given palm detection.
+    /// </summary>
+    /// <param name="frame">The raw original camera frame (BGR Mat).</param>
+    /// <param name="palm">The Stage 1 palm detection result containing bounding box and alignment keypoints.</param>
+    /// <returns>A <see cref="HandLandmarkResult"/> with 21 joint landmarks, or <c>null</c> if confidence falls below threshold.</returns>
     public HandLandmarkResult? Estimate(Mat frame, PalmDetectionResult palm)
     {
-        // 1. Initial crop and pad for rotation
+        // 1. Initial crop and square padding to allow full 360-degree in-plane rotation without clipping corners
         var (crop1, palmBox1, bias1) = CropAndPadFromPalm(frame, palm.Box, forRotation: true);
-        using var crop1Mat = crop1;
-        using var rgbMat = new Mat();
+        using Mat? crop1Mat = crop1;
+        using Mat rgbMat = new();
         Cv2.CvtColor(crop1Mat, rgbMat, ColorConversionCodes.BGR2RGB);
 
-        var padBias = new Point2f(bias1.X, bias1.Y);
+        Point2f padBias = new(bias1.X, bias1.Y);
 
-        // Adjust palm landmarks to crop1 coordinate frame
-        var p1 = palm.Keypoints[0] - padBias; // Wrist / palm base
-        var p2 = palm.Keypoints[2] - padBias; // Middle finger base
+        // Adjust palm landmarks to crop1 local coordinate system
+        Point2f p1 = palm.Keypoints[0] - padBias; // Wrist center
+        Point2f p2 = palm.Keypoints[2] - padBias; // Middle finger MCP knuckle
 
-        // Compute rotation angle
+        // Compute rotation angle to orient hand vertically upright (-90 degrees orientation)
         double radians = Math.PI / 2.0 - Math.Atan2(-(p2.Y - p1.Y), p2.X - p1.X);
         radians -= 2.0 * Math.PI * Math.Floor((radians + Math.PI) / (2.0 * Math.PI));
         double angleDeg = radians * 180.0 / Math.PI;
 
-        var centerPalmBox = new Point2f(
+        Point2f centerPalmBox = new(
             (palmBox1.X + palmBox1.Width / 2.0f) - padBias.X,
             (palmBox1.Y + palmBox1.Height / 2.0f) - padBias.Y
         );
 
-        using var rotMat = Cv2.GetRotationMatrix2D(centerPalmBox, angleDeg, 1.0);
-        using var rotatedImage = new Mat();
+        // Compute 2D affine rotation matrix around palm center
+        using Mat? rotMat = Cv2.GetRotationMatrix2D(centerPalmBox, angleDeg, 1.0);
+        using Mat rotatedImage = new();
         Cv2.WarpAffine(rgbMat, rotatedImage, rotMat, new Size(rgbMat.Width, rgbMat.Height));
 
         double m00 = rotMat.At<double>(0, 0);
@@ -66,13 +111,13 @@ public class HandLandmarkEstimator : IDisposable
         double m11 = rotMat.At<double>(1, 1);
         double m12 = rotMat.At<double>(1, 2);
 
-        // Rotate palm landmarks
+        // Rotate palm keypoints to compute the rotated bounding box
         float minX = float.MaxValue, minY = float.MaxValue;
         float maxX = float.MinValue, maxY = float.MinValue;
 
         for (int i = 0; i < palm.Keypoints.Length; i++)
         {
-            var pt = palm.Keypoints[i] - padBias;
+            Point2f pt = palm.Keypoints[i] - padBias;
             float rx = (float)(m00 * pt.X + m01 * pt.Y + m02);
             float ry = (float)(m10 * pt.X + m11 * pt.Y + m12);
             if (rx < minX) minX = rx;
@@ -81,17 +126,16 @@ public class HandLandmarkEstimator : IDisposable
             if (ry > maxY) maxY = ry;
         }
 
-        var rotPalmBox = new Rect2f(minX, minY, Math.Max(1f, maxX - minX), Math.Max(1f, maxY - minY));
+        Rect2f rotPalmBox = new(minX, minY, Math.Max(1f, maxX - minX), Math.Max(1f, maxY - minY));
 
-        // 2. Crop and pad rotated palm for landmark network
+        // 2. Crop the upright rotated hand and resize to 224x224 for neural network input
         var (crop2, rotPalmBoxEnlarged, _) = CropAndPadFromPalm(rotatedImage, rotPalmBox, forRotation: false);
-        using var crop2Mat = crop2;
-
-        using var resizedCrop = new Mat();
+        using Mat? crop2Mat = crop2;
+        using Mat resizedCrop = new();
         Cv2.Resize(crop2Mat, resizedCrop, new Size(InputSize, InputSize), 0, 0, InterpolationFlags.Area);
 
-        // Prepare Tensor [1, 224, 224, 3]
-        var tensor = new DenseTensor<float>(new[] { 1, InputSize, InputSize, 3 });
+        // Prepare ONNX dense tensor [Batch=1, Height=224, Width=224, Channels=3]
+        DenseTensor<float> tensor = new([1, InputSize, InputSize, 3]);
         unsafe
         {
             byte* ptr = (byte*)resizedCrop.Data.ToPointer();
@@ -108,18 +152,24 @@ public class HandLandmarkEstimator : IDisposable
             }
         }
 
-        var inputs = new List<NamedOnnxValue>
-        {
+        List<NamedOnnxValue> inputs =
+        [
             NamedOnnxValue.CreateFromTensor("input_1", tensor)
-        };
+        ];
 
+        // 3. Execute ONNX landmark inference
         using var outputs = _session.Run(inputs);
 
-        float[] lmRaw = Array.Empty<float>();
-        float[] worldLmRaw = Array.Empty<float>();
+        float[] lmRaw = [];
+        float[] worldLmRaw = [];
         float score = 0f;
         float handedness = 0f;
 
+        // Output mappings:
+        // "Identity": 21 3D normalized landmarks [1, 63]
+        // "Identity_1": Hand presence confidence score [1, 1]
+        // "Identity_2": Handedness score [1, 1] (0.0 = Left, 1.0 = Right)
+        // "Identity_3": 21 3D world metric landmarks in meters [1, 63]
         foreach (var outVal in outputs)
         {
             if (outVal.Name == "Identity")
@@ -140,20 +190,21 @@ public class HandLandmarkEstimator : IDisposable
             }
         }
 
+        // Reject low-confidence hand detections
         if (score < _confThreshold) return null;
 
-        // Post-process coordinates
+        // 4. Post-process coordinates: Invert affine rotation and project back to original frame
         float rotBoxW = rotPalmBoxEnlarged.Width;
         float rotBoxH = rotPalmBoxEnlarged.Height;
         float scaleFactor = Math.Max(rotBoxW, rotBoxH) / InputSize;
 
-        using var coordsRotMat = Cv2.GetRotationMatrix2D(new Point2f(0, 0), angleDeg, 1.0);
+        using Mat? coordsRotMat = Cv2.GetRotationMatrix2D(new Point2f(0, 0), angleDeg, 1.0);
         double c00 = coordsRotMat.At<double>(0, 0);
         double c01 = coordsRotMat.At<double>(0, 1);
         double c10 = coordsRotMat.At<double>(1, 0);
         double c11 = coordsRotMat.At<double>(1, 1);
 
-        // Inverse affine transform of rotation matrix
+        // Inverse affine transformation parameters
         double invM00 = m00;
         double invM01 = m10;
         double invM10 = m01;
@@ -167,7 +218,7 @@ public class HandLandmarkEstimator : IDisposable
         float origCenterX = (float)(invM00 * rotBoxCenterX + invM01 * rotBoxCenterY + invT0);
         float origCenterY = (float)(invM10 * rotBoxCenterX + invM11 * rotBoxCenterY + invT1);
 
-        var result = new HandLandmarkResult
+        HandLandmarkResult result = new()
         {
             Confidence = score,
             HandednessScore = handedness
@@ -182,7 +233,7 @@ public class HandLandmarkEstimator : IDisposable
             float rawY = (lmRaw[i * 3 + 1] - InputSize / 2.0f) * scaleFactor;
             float rawZ = lmRaw[i * 3 + 2] * scaleFactor;
 
-            // Correct 2D un-rotation (equivalent to Python np.dot([rawX, rawY], coordsRotMat[:, :2]))
+            // Apply inverse 2D rotation
             float rotX = (float)(c00 * rawX + c10 * rawY);
             float rotY = (float)(c01 * rawX + c11 * rawY);
 
@@ -208,7 +259,7 @@ public class HandLandmarkEstimator : IDisposable
             }
         }
 
-        // Bounding Box
+        // Compute enlarged hand bounding box for visual tracking feedback
         float bw = bMaxX - bMinX;
         float bh = bMaxY - bMinY;
         float bcx = bMinX + bw / 2.0f + HandBoxShift[0] * bw;
@@ -220,6 +271,9 @@ public class HandLandmarkEstimator : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Helper method to crop, expand, and pad a sub-region around a palm box.
+    /// </summary>
     private static (Mat cropped, Rect2f bbox, Point2f bias) CropAndPadFromPalm(Mat image, Rect2f palmBox, bool forRotation)
     {
         float[] shiftVector = forRotation ? PalmBoxPreShift : PalmBoxShift;
@@ -259,16 +313,19 @@ public class HandLandmarkEstimator : IDisposable
         int right = padW - left;
         int bottom = padH - top;
 
-        var padded = new Mat();
+        using Mat padded = new();
         Cv2.CopyMakeBorder(cropped, padded, top, bottom, left, right, BorderTypes.Constant, Scalar.All(0));
         cropped.Dispose();
 
-        var finalBox = new Rect2f(cropX, cropY, cropW, cropH);
-        var bias = new Point2f(cropX - left, cropY - top);
+        Rect2f finalBox = new(cropX, cropY, cropW, cropH);
+        Point2f bias = new(cropX - left, cropY - top);
 
         return (padded, finalBox, bias);
     }
 
+    /// <summary>
+    /// Disposes the unmanaged ONNX Runtime session and native memory buffers.
+    /// </summary>
     public void Dispose()
     {
         _session.Dispose();
