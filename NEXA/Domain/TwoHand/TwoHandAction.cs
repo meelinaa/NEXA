@@ -1,7 +1,7 @@
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// Enumeration of distinct window manipulation and desktop capture actions triggered by two-hand gestures.
+/// Enumeration of distinct window manipulation, desktop capture, and media playback actions triggered by two-hand gestures.
 /// <para>
 /// <b>What it is:</b> A domain enum representing discrete multi-hand operations.
 /// </para>
@@ -26,5 +26,10 @@ public enum TwoHandAction
     /// <summary>
     /// Captures the screen region framed by two "L"-shaped hands upon double touch closure.
     /// </summary>
-    Screenshot
+    Screenshot,
+
+    /// <summary>
+    /// Toggles global media audio/video playback (VK_MEDIA_PLAY_PAUSE) upon dual-palm clap / prayer gesture.
+    /// </summary>
+    PlayPause
 }

@@ -7,17 +7,18 @@ using OpenCvSharp;
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// Domain-level analyzer evaluating two-hand Maximize, Minimize, and Camera-Frame Screenshot gestures with a 2.0-second hold requirement.
+/// Domain-level analyzer evaluating two-hand Maximize, Minimize, Camera-Frame Screenshot, and Clap / Prayer Play/Pause gestures.
 /// <para>
-/// <b>What it is:</b> A multi-hand spatial gesture analyzer coordinating window sizing and screen capture interactions.
+/// <b>What it is:</b> A multi-hand spatial gesture analyzer coordinating window sizing, screen capture, and media playback interactions.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="number">
+/// <item><description><b>Clap / Prayer Play/Pause:</b> When both hands form an Open Palm posture and meet palm-to-palm (👏 / 🤲), triggers global VK_MEDIA_PLAY_PAUSE with 1.5s cooldown.</description></item>
 /// <item><description><b>Camera-Frame Screenshot:</b> When both hands form an "L" posture, calculates a viewfinder bounding box. Holding both Index tips and Thumb tips touching continuously for 2.0 seconds triggers a fullscreen capture.</description></item>
 /// <item><description><b>Maximize Detection:</b> Detects index fingertip touch followed by rapid horizontal expansion (>40% increase within 600ms), gated by 3.0s window and suppressed for 2.0s post-screenshot.</description></item>
 /// <item><description><b>Minimize Detection:</b> Detects dual side-by-side hands executing a synchronous fast downward swipe (>40px in &lt;300ms).</description></item>
-/// <item><description><b>Cooldown Protection:</b> Enforces a 750ms refractory period following any action, plus a 2.0s block on Maximize post-screenshot.</description></item>
+/// <item><description><b>Cooldown Protection:</b> Enforces refractory periods across actions.</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -42,7 +43,7 @@ public class TwoHandGestureDetector
     }
 
     /// <summary>
-    /// Evaluates tracked hands for the current frame to detect Screenshot, Maximize, or Minimize gestures.
+    /// Evaluates tracked hands for the current frame to detect Play/Pause, Screenshot, Maximize, or Minimize gestures.
     /// </summary>
     /// <param name="hands">The list of active tracked hands.</param>
     /// <param name="inputSink">The output adapter holding the focused window handle.</param>
@@ -55,6 +56,7 @@ public class TwoHandGestureDetector
             State.ScreenshotHoldTimer.Reset();
             State.ScreenshotHoldDurationSeconds = 0.0;
             State.ScreenshotHoldProgress = 0.0;
+            State.ConsecutiveClapFrames = 0;
             ResetTouchState();
             State.DownwardHistory.Clear();
             return null;
@@ -63,6 +65,8 @@ public class TwoHandGestureDetector
         TrackedHand hand1 = hands[0];
         TrackedHand hand2 = hands[1];
 
+        Point2f wrist1 = hand1.SmoothedLandmarks2D[0]; // Wrist 1
+        Point2f wrist2 = hand2.SmoothedLandmarks2D[0]; // Wrist 2
         Point2f index1 = hand1.SmoothedLandmarks2D[8]; // Index fingertip 1
         Point2f index2 = hand2.SmoothedLandmarks2D[8]; // Index fingertip 2
         Point2f thumb1 = hand1.SmoothedLandmarks2D[4]; // Thumb tip 1
@@ -77,7 +81,48 @@ public class TwoHandGestureDetector
         DateTime now = DateTime.Now;
 
         // =========================================================================
-        // GESTURE 1: CAMERA-FRAME SCREENSHOT (Dual "L" Hands + 2.0s Double Touch Hold)
+        // GESTURE 1: CLAP / PRAYER PLAY/PAUSE (Dual Open Palms Meeting 👏 / 🤲)
+        // =========================================================================
+        bool isOpenPalm1 = IsOpenPalmPosture(hand1);
+        bool isOpenPalm2 = IsOpenPalmPosture(hand2);
+
+        if (isOpenPalm1 && isOpenPalm2)
+        {
+            double distPalms = Math.Sqrt(Math.Pow(palm1.X - palm2.X, 2) + Math.Pow(palm1.Y - palm2.Y, 2));
+            double distWrists = Math.Sqrt(Math.Pow(wrist1.X - wrist2.X, 2) + Math.Pow(wrist1.Y - wrist2.Y, 2));
+            double clapThreshold = avgPalmSize * 0.50;
+
+            if (!State.IsMediaPlayPauseInCooldown && distPalms <= clapThreshold && distWrists <= avgPalmSize * 0.70)
+            {
+                State.ConsecutiveClapFrames++;
+                if (State.ConsecutiveClapFrames >= 2)
+                {
+                    State.MediaPlayPauseCooldownTimer.Restart();
+                    State.ConsecutiveClapFrames = 0;
+                    State.LastMediaPlayPauseTime = now;
+                    State.LastMediaFeedbackCenter = new Point2f((palm1.X + palm2.X) / 2f, (palm1.Y + palm2.Y) / 2f);
+                    State.LastAction = "PLAY / PAUSE";
+                    State.LastFeedbackTime = now;
+                    State.LastFeedbackCenter = State.LastMediaFeedbackCenter;
+
+                    ResetTouchState();
+                    State.DownwardHistory.Clear();
+
+                    return new TwoHandGestureDecision(TwoHandAction.PlayPause, IntPtr.Zero);
+                }
+            }
+            else
+            {
+                State.ConsecutiveClapFrames = 0;
+            }
+        }
+        else
+        {
+            State.ConsecutiveClapFrames = 0;
+        }
+
+        // =========================================================================
+        // GESTURE 2: CAMERA-FRAME SCREENSHOT (Dual "L" Hands + 2.0s Double Touch Hold)
         // =========================================================================
         bool isHand1L = IsLPosture(hand1);
         bool isHand2L = IsLPosture(hand2);
@@ -160,7 +205,7 @@ public class TwoHandGestureDetector
         }
 
         // =========================================================================
-        // GESTURE 2: MAXIMIZE (Index-Touch -> Horizontal Expansion Apart)
+        // GESTURE 3: MAXIMIZE (Index-Touch -> Horizontal Expansion Apart)
         // (Suppressed for 2.0s post-screenshot to eliminate disambiguation conflicts)
         // =========================================================================
         if (!State.IsScreenshotBlocked)
@@ -219,7 +264,7 @@ public class TwoHandGestureDetector
         }
 
         // =========================================================================
-        // GESTURE 3: MINIMIZE (Dual Synchronous Fast Downward Swipe)
+        // GESTURE 4: MINIMIZE (Dual Synchronous Fast Downward Swipe)
         // =========================================================================
         State.DownwardHistory.Enqueue((palm1, palm2, now));
 
@@ -264,6 +309,34 @@ public class TwoHandGestureDetector
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Helper evaluating whether an individual hand is in Open Palm posture with all 5 extended fingers.
+    /// </summary>
+    private static bool IsOpenPalmPosture(TrackedHand hand)
+    {
+        if (hand.Gesture == "Open Palm")
+            return true;
+
+        double distThumb0 = hand.Distance(4, 0);
+        double distThumb2 = hand.Distance(2, 0);
+        double distIndex0 = hand.Distance(8, 0);
+        double distIndex5 = hand.Distance(5, 0);
+        double distMiddle0 = hand.Distance(12, 0);
+        double distMiddle9 = hand.Distance(9, 0);
+        double distRing0 = hand.Distance(16, 0);
+        double distRing13 = hand.Distance(13, 0);
+        double distPinky0 = hand.Distance(20, 0);
+        double distPinky17 = hand.Distance(17, 0);
+
+        bool isThumbExtended = distThumb0 > distThumb2 * 1.05;
+        bool isIndexExtended = distIndex0 > distIndex5 * 1.10;
+        bool isMiddleExtended = distMiddle0 > distMiddle9 * 1.10;
+        bool isRingExtended = distRing0 > distRing13 * 1.10;
+        bool isPinkyExtended = distPinky0 > distPinky17 * 1.10;
+
+        return isThumbExtended && isIndexExtended && isMiddleExtended && isRingExtended && isPinkyExtended;
     }
 
     /// <summary>

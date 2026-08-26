@@ -55,6 +55,9 @@ public class Win32InputSink : IInputSink
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr WindowFromPoint(POINT point);
 
     [DllImport("user32.dll")]
@@ -171,6 +174,13 @@ public class Win32InputSink : IInputSink
             new() { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTUP } }
         };
         SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    /// <inheritdoc/>
+    public void SendMediaPlayPause()
+    {
+        keybd_event(0xB3, 0, 0x0001, UIntPtr.Zero); // VK_MEDIA_PLAY_PAUSE down
+        keybd_event(0xB3, 0, 0x0001 | 0x0002, UIntPtr.Zero); // VK_MEDIA_PLAY_PAUSE up
     }
 
     /// <inheritdoc/>
@@ -427,7 +437,7 @@ public class Win32InputSink : IInputSink
 
         StringBuilder sb = new(512);
         GetWindowText(hwnd, sb, sb.Capacity);
-        title = sb.ToString();
+        title = NEXA.Common.TextSanitizer.ToSafeAscii(sb.ToString());
 
         return true;
     }

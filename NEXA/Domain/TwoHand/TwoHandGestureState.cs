@@ -6,7 +6,7 @@ using OpenCvSharp;
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// State container tracking temporal windows, fingertip touch anchors, synchronous downward motions, camera-framing viewfinder rectangles, and screenshot hold durations.
+/// State container tracking temporal windows, fingertip touch anchors, synchronous downward motions, camera-framing viewfinder rectangles, screenshot hold durations, and media play/pause cooldowns.
 /// <para>
 /// <b>What it is:</b> The state machine memory model for <see cref="TwoHandGestureDetector"/>.
 /// </para>
@@ -17,7 +17,8 @@ namespace NEXA.Domain.TwoHand;
 /// <item><description>Tracks live camera-frame bounding boxes spanned by dual "L" hands.</description></item>
 /// <item><description>Measures continuous double-touch hold duration (2.0s required) before triggering a screenshot.</description></item>
 /// <item><description>Enforces a 2.0-second directed cooldown blocking Maximize and consecutive screenshots.</description></item>
-/// <item><description>Enforces a 750ms refractory cooldown following any executed gesture.</description></item>
+/// <item><description>Enforces a 1.5-second cooldown for dual-palm Play/Pause media toggles.</description></item>
+/// <item><description>Enforces a 750ms refractory cooldown following any executed window gesture.</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -57,6 +58,33 @@ public class TwoHandGestureState
     /// Remaining active window duration in seconds.
     /// </summary>
     public double RemainingWindowSeconds => Math.Max(0.0, ActiveWindowDuration.TotalSeconds - (DateTime.Now - LastFistReleaseTime).TotalSeconds);
+
+    // --- Media Play/Pause Clap Tracking ---
+
+    /// <summary>
+    /// Dedicated stopwatch enforcing a 1.5-second cooldown between consecutive Play/Pause clap triggers.
+    /// </summary>
+    public Stopwatch MediaPlayPauseCooldownTimer { get; } = new();
+
+    /// <summary>
+    /// Indicates whether media play/pause triggers are currently suppressed by cooldown.
+    /// </summary>
+    public bool IsMediaPlayPauseInCooldown => MediaPlayPauseCooldownTimer.IsRunning && MediaPlayPauseCooldownTimer.Elapsed.TotalSeconds < 1.5;
+
+    /// <summary>
+    /// Number of consecutive frames that dual open palms have been touching in clap/prayer posture.
+    /// </summary>
+    public int ConsecutiveClapFrames { get; set; } = 0;
+
+    /// <summary>
+    /// Timestamp of the most recent Play/Pause trigger for AR animation feedback.
+    /// </summary>
+    public DateTime LastMediaPlayPauseTime { get; set; } = DateTime.MinValue;
+
+    /// <summary>
+    /// 2D camera coordinates center point where the Play/Pause pulse animation originates.
+    /// </summary>
+    public Point2f LastMediaFeedbackCenter { get; set; }
 
     // --- Camera Frame Screenshot Tracking ---
 
@@ -157,7 +185,7 @@ public class TwoHandGestureState
     // --- Visual Feedback & Telemetry ---
 
     /// <summary>
-    /// Action label ("MAXIMIZE", "MINIMIZE", or "SCREENSHOT") of the most recently executed gesture.
+    /// Action label ("MAXIMIZE", "MINIMIZE", "SCREENSHOT", or "PLAY / PAUSE") of the most recently executed gesture.
     /// </summary>
     public string LastAction { get; set; } = string.Empty;
 

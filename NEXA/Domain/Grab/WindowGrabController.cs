@@ -305,9 +305,10 @@ public class WindowGrabController
             }
 
             // Window metadata header badge
-            string titleDisplay = State.CachedWindowTitle.Length > 18
-                ? State.CachedWindowTitle.Substring(0, 15) + "..."
-                : State.CachedWindowTitle;
+            string rawTitle = NEXA.Common.TextSanitizer.ToSafeAscii(State.CachedWindowTitle);
+            string titleDisplay = rawTitle.Length > 18
+                ? rawTitle.Substring(0, 15) + "..."
+                : rawTitle;
 
             string tagText;
             if (State.IsSnapped)
@@ -335,7 +336,7 @@ public class WindowGrabController
                 tagText = $"GRABBED: [{titleDisplay}] ({(int)State.CurrentTargetX}, {(int)State.CurrentTargetY})";
             }
 
-            Cv2.PutText(frame, tagText, new Point(Math.Max(10, boxRect.Left + 8), Math.Max(25, boxRect.Top + 20)),
+            Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(tagText), new Point(Math.Max(10, boxRect.Left + 8), Math.Max(25, boxRect.Top + 20)),
                 HersheyFonts.HersheySimplex, 0.44, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
         }
 

@@ -8,16 +8,16 @@ using OpenCvSharp;
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// Application adapter orchestrating two-hand Maximize/Minimize window operations, Camera-Frame Screenshot capture, and augmented reality HUD rendering.
+/// Application adapter orchestrating two-hand Maximize/Minimize window operations, Camera-Frame Screenshot capture, Clap/Prayer Media Play/Pause, and augmented reality HUD rendering.
 /// <para>
-/// <b>What it is:</b> The controller executing multi-hand window state transitions and screen region captures.
+/// <b>What it is:</b> The controller executing multi-hand window state transitions, screen region captures, and media playback injections.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="bullet">
 /// <item><description>Passes dual tracked hands into <see cref="TwoHandGestureDetector"/>.</description></item>
-/// <item><description>Dispatches <see cref="IInputSink.MaximizeWindow"/>, <see cref="IInputSink.MinimizeWindow"/>, or <see cref="IScreenshotSink.CaptureScreenRegion"/>.</description></item>
-/// <item><description>Renders AR visual cues: active window countdown banner, viewfinder framing corner brackets, and white flash ripple animations.</description></item>
+/// <item><description>Dispatches <see cref="IInputSink.MaximizeWindow"/>, <see cref="IInputSink.MinimizeWindow"/>, <see cref="IScreenshotSink.CaptureScreenRegion"/>, or <see cref="IInputSink.SendMediaPlayPause"/>.</description></item>
+/// <item><description>Renders AR visual cues: active window countdown banner, viewfinder framing corner brackets, white flash animations, and Play/Pause pulse overlays.</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -34,7 +34,7 @@ public class TwoHandGestureController
     private readonly IScreenshotSink _screenshotSink;
 
     /// <summary>
-    /// The core domain detector evaluating Maximize, Minimize, and Screenshot gestures.
+    /// The core domain detector evaluating Maximize, Minimize, Screenshot, and Play/Pause gestures.
     /// </summary>
     public TwoHandGestureDetector Detector { get; }
 
@@ -87,7 +87,7 @@ public class TwoHandGestureController
     }
 
     /// <summary>
-    /// Evaluates tracked hands for the current frame and executes window commands or captures screenshots.
+    /// Evaluates tracked hands for the current frame and executes window commands, screenshots, or media play/pause.
     /// </summary>
     /// <param name="hands">The list of active tracked hands.</param>
     /// <param name="frameWidth">Camera frame width in pixels.</param>
@@ -110,6 +110,10 @@ public class TwoHandGestureController
                 // Capture full primary desktop screen
                 _screenshotSink.CaptureScreenRegion(0, 0, _screenWidth, _screenHeight, OutputDirectory, out string savedFilePath);
                 State.LastSavedFilePath = savedFilePath;
+            }
+            else if (decision.Action == TwoHandAction.PlayPause)
+            {
+                _inputSink.SendMediaPlayPause();
             }
         }
     }
@@ -213,11 +217,12 @@ public class TwoHandGestureController
         // 3. Active 3.0s Window Status Banner (Top Center)
         if (State.IsWindowActive && _inputSink.LastFocusedHwnd != IntPtr.Zero)
         {
-            string winTitle = _inputSink.LastFocusedTitle.Length > 20
-                ? _inputSink.LastFocusedTitle.Substring(0, 17) + "..."
-                : _inputSink.LastFocusedTitle;
+            string rawTitle = NEXA.Common.TextSanitizer.ToSafeAscii(_inputSink.LastFocusedTitle);
+            string winTitle = rawTitle.Length > 20
+                ? rawTitle.Substring(0, 17) + "..."
+                : rawTitle;
 
-            string bannerText = $"[2-HAND READY ({State.RemainingWindowSeconds:F1}s): {winTitle}]";
+            string bannerText = NEXA.Common.TextSanitizer.ToSafeAscii($"[2-HAND READY ({State.RemainingWindowSeconds:F1}s): {winTitle}]");
             Size textSize = Cv2.GetTextSize(bannerText, HersheyFonts.HersheySimplex, 0.44, 1, out _);
 
             int bannerX = Math.Max(10, (frame.Width - textSize.Width) / 2);
@@ -257,14 +262,28 @@ public class TwoHandGestureController
             int animRadius = (int)(20 + progress * 50);
             Point center = new((int)State.LastFeedbackCenter.X, (int)State.LastFeedbackCenter.Y);
 
-            Scalar actionColor = State.LastAction == "MAXIMIZE"
-                ? new Scalar(0, 255, 120) // Green
-                : (State.LastAction == "SCREENSHOT" ? new Scalar(255, 255, 255) : new Scalar(0, 100, 255)); // Red
+            Scalar actionColor;
+            if (State.LastAction == "MAXIMIZE")
+            {
+                actionColor = new Scalar(0, 255, 120); // Green
+            }
+            else if (State.LastAction == "SCREENSHOT")
+            {
+                actionColor = new Scalar(255, 255, 255); // White
+            }
+            else if (State.LastAction == "PLAY / PAUSE")
+            {
+                actionColor = new Scalar(0, 220, 255); // Cyan
+            }
+            else
+            {
+                actionColor = new Scalar(0, 100, 255); // Red / Orange
+            }
 
             Cv2.Circle(frame, center, animRadius, actionColor, 2, LineTypes.AntiAlias);
 
-            string actionLabel = $"* {State.LastAction} *";
-            Cv2.PutText(frame, actionLabel, new Point(center.X - 50, center.Y - animRadius - 8),
+            string actionLabel = State.LastAction == "PLAY / PAUSE" ? "> || [PLAY / PAUSE]" : $"* {State.LastAction} *";
+            Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(actionLabel), new Point(center.X - 60, center.Y - animRadius - 8),
                 HersheyFonts.HersheySimplex, 0.60, actionColor, 2, LineTypes.AntiAlias);
         }
     }

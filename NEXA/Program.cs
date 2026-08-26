@@ -256,6 +256,37 @@ if (args.Length > 0 && args[0] == "--test")
     if (!testScreenDetector.State.IsScreenshotBlocked)
         throw new Exception("Screenshot disambiguation cooldown failed to engage.");
 
+    // Automated Unit Test 8: Clap / Prayer (Play/Pause Media Control)
+    Console.WriteLine("Testing TwoHandGestureDetector (Clap/Prayer Play/Pause)...");
+    TwoHandGestureDetector testPlayPauseDetector = new();
+
+    TrackedHand palmHand1 = new() { Gesture = "Open Palm" };
+    palmHand1.SmoothedLandmarks2D[0] = new Point2f(500, 500); // Wrist 1
+    palmHand1.SmoothedLandmarks2D[9] = new Point2f(500, 400); // Palm 1
+    palmHand1.SmoothedLandmarks2D[4] = new Point2f(470, 430);
+    palmHand1.SmoothedLandmarks2D[8] = new Point2f(490, 320);
+    palmHand1.SmoothedLandmarks2D[12] = new Point2f(510, 310);
+    palmHand1.SmoothedLandmarks2D[16] = new Point2f(530, 325);
+    palmHand1.SmoothedLandmarks2D[20] = new Point2f(545, 345);
+
+    TrackedHand palmHand2 = new() { Gesture = "Open Palm" };
+    palmHand2.SmoothedLandmarks2D[0] = new Point2f(515, 500); // Wrist 2 (dist=15px)
+    palmHand2.SmoothedLandmarks2D[9] = new Point2f(515, 400); // Palm 2 (dist=15px)
+    palmHand2.SmoothedLandmarks2D[4] = new Point2f(545, 430);
+    palmHand2.SmoothedLandmarks2D[8] = new Point2f(525, 320);
+    palmHand2.SmoothedLandmarks2D[12] = new Point2f(505, 310);
+    palmHand2.SmoothedLandmarks2D[16] = new Point2f(485, 325);
+    palmHand2.SmoothedLandmarks2D[20] = new Point2f(470, 345);
+
+    List<TrackedHand> dualPalmHands = new() { palmHand1, palmHand2 };
+
+    testPlayPauseDetector.Update(dualPalmHands, inputSink);
+    TwoHandGestureDecision? playPauseDecision = testPlayPauseDetector.Update(dualPalmHands, inputSink);
+    if (playPauseDecision == null || playPauseDecision.Action != TwoHandAction.PlayPause)
+        throw new Exception("Dual-Palm Clap/Prayer Play/Pause failed to trigger.");
+    if (!testPlayPauseDetector.State.IsMediaPlayPauseInCooldown)
+        throw new Exception("Play/Pause cooldown failed to engage.");
+
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -512,7 +543,7 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     }
     else if (grabCtrl.State.IsGrabbed)
     {
-        winGrabStatus = $"Gegriffen [{grabCtrl.State.CachedWindowTitle}]";
+        winGrabStatus = $"Gegriffen [{NEXA.Common.TextSanitizer.ToSafeAscii(grabCtrl.State.CachedWindowTitle)}]";
         winGrabColor = new Scalar(0, 100, 255);
     }
     else if (grabCtrl.State.HoldDurationSeconds > 0)
@@ -526,7 +557,7 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
         winGrabColor = new Scalar(0, 255, 120);
     }
 
-    Cv2.PutText(frame, $"Fenster (G): {winGrabStatus}", new Point(20, 102),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Fenster (G): {winGrabStatus}"), new Point(20, 102),
         HersheyFonts.HersheySimplex, 0.36, winGrabColor, 1, LineTypes.AntiAlias);
 
     string twoHandStatus;
@@ -536,9 +567,14 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
         twoHandStatus = "AUS (Taste T)";
         twoHandColor = new Scalar(160, 160, 160);
     }
+    else if ((DateTime.Now - twoHandCtrl.State.LastMediaPlayPauseTime).TotalMilliseconds < 1500)
+    {
+        twoHandStatus = "> || PLAY / PAUSE gesendet!";
+        twoHandColor = new Scalar(0, 220, 255);
+    }
     else if (twoHandCtrl.State.IsCameraFrameActive)
     {
-        twoHandStatus = "Kamera-Rahmen (Touch zum Ausloesen)";
+        twoHandStatus = "Kamera-Rahmen (2s Zusammenhalten)";
         twoHandColor = new Scalar(0, 255, 120);
     }
     else if ((DateTime.Now - twoHandCtrl.State.LastScreenshotTime).TotalMilliseconds < 1500)
@@ -558,11 +594,11 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     }
     else
     {
-        twoHandStatus = "Bereit (Doppel-L / Faust-Window)";
+        twoHandStatus = "Bereit (Klatsch >|| / Doppel-L / Faust)";
         twoHandColor = new Scalar(120, 120, 120);
     }
 
-    Cv2.PutText(frame, $"Zwei-Hand (T): {twoHandStatus}", new Point(20, 120),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Zwei-Hand (T): {twoHandStatus}"), new Point(20, 120),
         HersheyFonts.HersheySimplex, 0.36, twoHandColor, 1, LineTypes.AntiAlias);
 
     string throwStatus = throwCtrl.Enabled
@@ -572,7 +608,7 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
         ? (throwCtrl.State.IsEdgeOnPosture ? new Scalar(255, 100, 200) : new Scalar(0, 255, 120))
         : new Scalar(160, 160, 160);
 
-    Cv2.PutText(frame, $"Monitor (M): {throwStatus}", new Point(20, 138),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Monitor (M): {throwStatus}"), new Point(20, 138),
         HersheyFonts.HersheySimplex, 0.36, throwColor, 1, LineTypes.AntiAlias);
 
     string volStatus;
@@ -584,7 +620,7 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     }
     else if (volCtrl.State.IsActive)
     {
-        volStatus = $"Aktiv: {(int)(volCtrl.State.SmoothedVolume * 100)}% ({volCtrl.State.AngleDelta:+0;-0;0}°)";
+        volStatus = $"Aktiv: {(int)(volCtrl.State.SmoothedVolume * 100)}% ({volCtrl.State.AngleDelta:+0;-0;0} deg)";
         volColor = new Scalar(0, 255, 120);
     }
     else
@@ -593,11 +629,11 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
         volColor = new Scalar(0, 255, 120);
     }
 
-    Cv2.PutText(frame, $"Lautstaerke (V): {volStatus}", new Point(20, 156),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Lautstaerke (V): {volStatus}"), new Point(20, 156),
         HersheyFonts.HersheySimplex, 0.36, volColor, 1, LineTypes.AntiAlias);
 
     string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
     string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
-    Cv2.PutText(frame, objStatus, new Point(20, 174),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 174),
         HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }

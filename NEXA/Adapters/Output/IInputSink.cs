@@ -39,6 +39,11 @@ public interface IInputSink
     void Click();
 
     /// <summary>
+    /// Injects a global Windows hardware media key event (VK_MEDIA_PLAY_PAUSE = 0xB3) to toggle audio/video playback.
+    /// </summary>
+    void SendMediaPlayPause();
+
+    /// <summary>
     /// Relocates a native OS window to the specified desktop coordinates without altering its size or Z-order.
     /// </summary>
     /// <param name="hwnd">Native Win32 window handle pointer (HWND).</param>
