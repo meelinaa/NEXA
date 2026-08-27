@@ -4,9 +4,9 @@ using OpenCvSharp;
 namespace NEXA.Face;
 
 /// <summary>
-/// Domain data transfer model representing a detected human face with all 468 MediaPipe facial landmark contour points, spatial bounding box, and tracked mouth region.
+/// Domain data transfer model representing a detected human face with all 468 MediaPipe facial landmark contour points, spatial bounding box, mouth region, and ear targets.
 /// <para>
-/// <b>What it is:</b> The 468-point facial telemetry model powering MediaPipe FaceMesh tracking and the "Shhh" mute gesture.
+/// <b>What it is:</b> The 468-point facial telemetry model powering MediaPipe FaceMesh tracking, the "Shhh" microphone mute gesture, and the "Hear-No-Evil" speaker sound mute gesture.
 /// </para>
 /// </summary>
 public class TrackedFace
@@ -35,6 +35,21 @@ public class TrackedFace
     /// Proximity radius around the mouth center for the "Shhh" gesture.
     /// </summary>
     public float MouthRadius { get; set; }
+
+    /// <summary>
+    /// Estimated position of the left ear tragion / side of head (Landmark 454).
+    /// </summary>
+    public Point2f LeftEar { get; set; }
+
+    /// <summary>
+    /// Estimated position of the right ear tragion / side of head (Landmark 234).
+    /// </summary>
+    public Point2f RightEar { get; set; }
+
+    /// <summary>
+    /// Proximity radius around each ear for the "Hear No Evil" 🙉 gesture.
+    /// </summary>
+    public float EarRadius { get; set; }
 
     /// <summary>
     /// Estimated position of the left eye pupil / center (Landmark 386).

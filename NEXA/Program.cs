@@ -8,6 +8,7 @@ using Microsoft.ML.OnnxRuntime;
 using NEXA.Adapters.Output;
 using NEXA.Common;
 using NEXA.Domain.Click;
+using NEXA.Domain.EarsMute;
 using NEXA.Domain.Grab;
 using NEXA.Domain.Lock;
 using NEXA.Domain.MonitorThrow;
@@ -24,29 +25,21 @@ using OpenCvSharp;
 int webcamIndex = 0; // Index 0 = Webcam. Change if external camera is used.
 
 // ====================================================================================================
-// N.E.X.A. - Neural EXtended Augmented-Reality Gesture Controller (MediaPipe ONNX + OpenCV + Win32)
-// Main Application Entry Point and Video Pipeline Loop
+// System Initialization
 // ====================================================================================================
-
+Console.ForegroundColor = ConsoleColor.Cyan;
 Console.WriteLine("==============================");
-Console.WriteLine("  N.E.X.A. - Hand Tracking");
+Console.WriteLine("  N.E.X.A. - Hand Tracking    ");
 Console.WriteLine("==============================");
+Console.ResetColor();
 
-// Resolve ONNX model file paths
 string palmModelPath = Path.Combine(AppContext.BaseDirectory, "models", "palm_detection.onnx");
 string landmarkModelPath = Path.Combine(AppContext.BaseDirectory, "models", "handpose_estimation.onnx");
 
 if (!File.Exists(palmModelPath) || !File.Exists(landmarkModelPath))
 {
-    // Fallback relative paths
-    palmModelPath = "models/palm_detection.onnx";
-    landmarkModelPath = "models/handpose_estimation.onnx";
-}
-
-if (!File.Exists(palmModelPath) || !File.Exists(landmarkModelPath))
-{
     Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine($"[ERROR] ONNX model files not found! Expected:\n  {palmModelPath}\n  {landmarkModelPath}");
+    Console.WriteLine($"[ERROR] Models not found in: {Path.Combine(AppContext.BaseDirectory, "models")}");
     Console.ResetColor();
     return;
 }
@@ -71,6 +64,7 @@ VolumeController volumeController = new(audioSink);
 LockSequenceController lockController = new(inputSink);
 CircleUndoController circleUndoController = new(inputSink);
 ShhhMuteController shhhMuteController = new(audioSink);
+HearNoEvilController hearNoEvilController = new(audioSink);
 
 // Wire 3-second post-fist window trigger
 windowGrabController.OnFistReleased += () => twoHandController.Detector.NotifyFistReleased();
@@ -105,6 +99,8 @@ if (args.Length > 0 && args[0] == "--test")
     circleUndoController.RenderFeedback(testFrame, results.FirstOrDefault());
     shhhMuteController.Update(results.FirstOrDefault(), faceResult);
     shhhMuteController.RenderFeedback(testFrame, faceResult, results.FirstOrDefault());
+    hearNoEvilController.Update(results, faceResult);
+    hearNoEvilController.RenderFeedback(testFrame, faceResult, results);
 
     // Automated Unit Test 1: WindowGrabDetector State-Machine Simulation
     Console.WriteLine("Testing WindowGrabDetector state machine transitions...");
@@ -417,6 +413,30 @@ if (args.Length > 0 && args[0] == "--test")
     if (!didToggleMute || !testShhh.State.InCooldown)
         throw new Exception("4-Finger Mute gesture failed to trigger.");
 
+    // Automated Unit Test 12: HearNoEvilDetector (Hands to Ears Sound Mute)
+    Console.WriteLine("Testing HearNoEvilDetector (Hands to Ears Sound Mute)...");
+    HearNoEvilDetector testEars = new();
+    testEars.State.RequiredHoldSeconds = 0.01;
+
+    TrackedFace earFace = new()
+    {
+        LeftEar = new Point2f(750, 400),
+        RightEar = new Point2f(450, 400),
+        EarRadius = 60f
+    };
+
+    TrackedHand leftHandAtEar = new();
+    leftHandAtEar.SmoothedLandmarks2D[0] = new Point2f(740, 410);
+    TrackedHand rightHandAtEar = new();
+    rightHandAtEar.SmoothedLandmarks2D[0] = new Point2f(460, 410);
+
+    List<TrackedHand> earHands = [leftHandAtEar, rightHandAtEar];
+    testEars.Update(earHands, earFace);
+    Thread.Sleep(20);
+    bool didToggleSound = testEars.Update(earHands, earFace);
+    if (!didToggleSound || !testEars.State.InCooldown)
+        throw new Exception("Hear-No-Evil Sound Mute gesture failed to trigger.");
+
     Console.WriteLine($"[PASS] Pipeline & All State Machines executed cleanly. Detected hands: {results.Count}");
     return;
 }
@@ -453,6 +473,7 @@ Console.WriteLine("  [V]         : Toggle Volume Control (L-Gesture Rotary Dial)
 Console.WriteLine("  [L]         : Toggle PC Lock Gesture (Open-Fist-Open-Fist)");
 Console.WriteLine("  [U]         : Toggle Undo/Redo Gesture (Peace Wrist-Twist)");
 Console.WriteLine("  [X]         : Toggle Shhh Mute Gesture (Finger to Mouth)");
+Console.WriteLine("  [E]         : Toggle Hear No Evil Gesture (Hands to Ears Sound Mute)");
 Console.WriteLine("  [S]         : Toggle OneEuroFilter Smoothing");
 Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
 Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
@@ -519,47 +540,53 @@ while (true)
     // 11. Process "Shhh" (🤫) Audio Mute Toggle
     shhhMuteController.Update(primaryHand, primaryFace);
 
-    // 12. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
+    // 12. Process "Hear No Evil" (🙉) Master Speaker Sound Mute Toggle
+    hearNoEvilController.Update(trackedHands, primaryFace);
+
+    // 13. Process Relative Grab & Zoom on Virtual Object (when real window grab is idle)
     virtualObject.Update(primaryHand, frame.Width, frame.Height);
 
-    // 13. Render Hand Skeleton Bones Overlay
-    // 13. Render 68-Point Facial Landmarks & Contour Mesh
+    // 14. Render Hand Skeleton Bones Overlay
+    // 15. Render 68-Point Facial Landmarks & Contour Mesh
     faceMeshRenderer.Render(frame, primaryFace);
 
-    // 14. Render Hand Skeleton Bones Overlay
+    // 16. Render Hand Skeleton Bones Overlay
     renderer.Render(frame, trackedHands);
 
-    // 15. Render Mouse Click Feedback & Dwell Ring
+    // 17. Render Mouse Click Feedback & Dwell Ring
     mouseController.RenderFeedback(frame, primaryHand);
 
-    // 16. Render Swipe Scroll Feedback Arrows
+    // 18. Render Swipe Scroll Feedback Arrows
     scrollController.RenderFeedback(frame);
 
-    // 17. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
+    // 19. Render Real Window Grab Feedback, Scaled Corner Brackets & Pinch Caliper
     windowGrabController.RenderFeedback(frame);
 
-    // 18. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
+    // 20. Render Two-Hand Gesture Banner, Viewfinder Box, White Flash & Action Animations
     twoHandController.RenderFeedback(frame, trackedHands);
 
-    // 19. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
+    // 21. Render Multi-Monitor Blade Pose & Holographic Transfer Arrows
     monitorThrowController.RenderFeedback(frame, primaryHand);
 
-    // 20. Render Holographic Rotary Volume Dial & Live Audio Gauge
+    // 22. Render Holographic Rotary Volume Dial & Live Audio Gauge
     volumeController.RenderFeedback(frame);
 
-    // 21. Render 4-Stage Security PC Lock Sequence Badges & Alert
+    // 23. Render 4-Stage Security PC Lock Sequence Badges & Alert
     lockController.RenderFeedback(frame, primaryHand);
 
-    // 22. Render Circular Trajectory Spiral Trail & Revolution Gauge
+    // 24. Render Circular Trajectory Spiral Trail & Revolution Gauge
     circleUndoController.RenderFeedback(frame, primaryHand);
 
-    // 23. Render "Shhh" Mouth Reticle & Mute Animation
+    // 25. Render "Shhh" Mouth Reticle & Mute Animation
     shhhMuteController.RenderFeedback(frame, primaryFace, primaryHand);
 
-    // 24. Render Virtual Test Target Object
+    // 26. Render "Hear No Evil" Ear Reticles & Speaker Sound Mute Animation
+    hearNoEvilController.RenderFeedback(frame, primaryFace, trackedHands);
+
+    // 27. Render Virtual Test Target Object
     virtualObject.Render(frame);
 
-    // 25. Real-time FPS Calculation
+    // 28. Real-time FPS Calculation
     frameCount++;
     if (fpsStopwatch.ElapsedMilliseconds >= 500)
     {
@@ -568,14 +595,14 @@ while (true)
         fpsStopwatch.Restart();
     }
 
-    // 26. Render Telemetry HUD
+    // 29. Render Telemetry HUD
     if (showHud)
-        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController, lockController, circleUndoController, shhhMuteController);
+        DrawHud(frame, currentFps, trackedHands.Count, tracker.SmoothingEnabled, virtualObject, mouseController, scrollController, windowGrabController, twoHandController, monitorThrowController, volumeController, lockController, circleUndoController, shhhMuteController, hearNoEvilController);
     
-    // 27. Display Frame in OpenCV Window
+    // 30. Display Frame in OpenCV Window
     window.ShowImage(frame);
 
-    // 28. Handle Keyboard Hotkeys
+    // 31. Handle Keyboard Hotkeys
     int key = Cv2.WaitKey(1);
     if (key == 27 || key == 'q' || key == 'Q') // ESC or Q
     {
@@ -617,6 +644,10 @@ while (true)
     {
         shhhMuteController.Enabled = !shhhMuteController.Enabled;
     }
+    else if (key == 'e' || key == 'E')
+    {
+        hearNoEvilController.Enabled = !hearNoEvilController.Enabled;
+    }
     else if (key == 'f' || key == 'F')
     {
         faceMeshRenderer.ShowFaceOverlay = !faceMeshRenderer.ShowFaceOverlay;
@@ -650,9 +681,9 @@ Console.WriteLine("Shutting down NEXA Hand Tracking...");
 /// <summary>
 /// Draws the semi-transparent telemetry HUD card with live FPS, filter states, and controller status indicators.
 /// </summary>
-static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl, LockSequenceController lockCtrl, CircleUndoController undoCtrl, ShhhMuteController muteCtrl)
+static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, VirtualObjectController objCtrl, MouseController mouseCtrl, ScrollController scrollCtrl, WindowGrabController grabCtrl, TwoHandGestureController twoHandCtrl, MonitorThrowController throwCtrl, VolumeController volCtrl, LockSequenceController lockCtrl, CircleUndoController undoCtrl, ShhhMuteController muteCtrl, HearNoEvilController earsCtrl)
 {
-    Rect hudRect = new(10, 10, 390, 238);
+    Rect hudRect = new(10, 10, 390, 256);
     using Mat overlay = frame.Clone();
     Cv2.Rectangle(overlay, hudRect, new Scalar(10, 10, 15), -1);
     Cv2.AddWeighted(overlay, 0.7, frame, 0.3, 0, frame);
@@ -874,8 +905,29 @@ static void DrawHud(Mat frame, double fps, int handsCount, bool smoothed, Virtua
     Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Mikro (X): {muteStatus}"), new Point(20, 210),
         HersheyFonts.HersheySimplex, 0.36, muteColor, 1, LineTypes.AntiAlias);
 
+    string soundStatus;
+    Scalar soundColor;
+    if (!earsCtrl.Enabled)
+    {
+        soundStatus = "AUS (Taste E)";
+        soundColor = new Scalar(160, 160, 160);
+    }
+    else if (earsCtrl.State.IsInProximity)
+    {
+        soundStatus = $"Muten: {(int)(earsCtrl.State.HoldProgress * 100)}%";
+        soundColor = new Scalar(0, 140, 255);
+    }
+    else
+    {
+        soundStatus = earsCtrl.State.IsSpeakerMuted ? "STUMM (Haende an Ohren 🔇)" : "Aktiv (Haende an Ohren 🙉)";
+        soundColor = earsCtrl.State.IsSpeakerMuted ? new Scalar(0, 0, 255) : new Scalar(0, 255, 120);
+    }
+
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii($"Sound (E): {soundStatus}"), new Point(20, 228),
+        HersheyFonts.HersheySimplex, 0.36, soundColor, 1, LineTypes.AntiAlias);
+
     string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
     string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
-    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 228),
+    Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(objStatus), new Point(20, 246),
         HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
 }

@@ -127,12 +127,20 @@ public class FaceTracker : IDisposable
         Point2f rightEye = smoothedLandmarks[159]; // Right pupil / eye center
         Point2f noseTip = smoothedLandmarks[1];    // Nose tip
 
+        Point2f leftEar = smoothedLandmarks[454];   // Left ear tragion / head side
+        Point2f rightEar = smoothedLandmarks[234];  // Right ear tragion / head side
+        double earDist = Math.Sqrt(Math.Pow(leftEar.X - rightEar.X, 2) + Math.Pow(leftEar.Y - rightEar.Y, 2));
+        float earRadius = (float)Math.Max(50.0, earDist * 0.35);
+
         return new TrackedFace
         {
             BoundingBox = smoothedBox,
             Landmarks = smoothedLandmarks,
             MouthCenter = mouthCenter,
             MouthRadius = mouthRadius,
+            LeftEar = leftEar,
+            RightEar = rightEar,
+            EarRadius = earRadius,
             LeftEye = leftEye,
             RightEye = rightEye,
             NoseTip = noseTip,
