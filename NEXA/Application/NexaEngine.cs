@@ -31,9 +31,9 @@ public class NexaEngine
 {
     private readonly HandTracker _tracker;
     private readonly FaceTracker _faceTracker;
-    private readonly Win32InputSink _inputSink;
-    private readonly Win32AudioSink _audioSink;
-    private readonly Win32ScreenshotSink _screenshotSink;
+    private readonly IInputSink _inputSink;
+    private readonly IAudioSink _audioSink;
+    private readonly IScreenshotSink _screenshotSink;
     private readonly HandMeshRenderer _handRenderer;
     private readonly FaceMeshRenderer _faceRenderer;
     private readonly VirtualObjectController _virtualObject;
@@ -56,9 +56,9 @@ public class NexaEngine
     public NexaEngine(
         HandTracker tracker,
         FaceTracker faceTracker,
-        Win32InputSink inputSink,
-        Win32AudioSink audioSink,
-        Win32ScreenshotSink screenshotSink,
+        IInputSink inputSink,
+        IAudioSink audioSink,
+        IScreenshotSink screenshotSink,
         HandMeshRenderer handRenderer,
         FaceMeshRenderer faceRenderer,
         VirtualObjectController virtualObject,
@@ -230,7 +230,9 @@ public class NexaEngine
                     ref showHud);
 
                 if (!continueRunning)
+                {
                     break;
+                }
             }
         }
 

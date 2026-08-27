@@ -1,4 +1,5 @@
 using System;
+using NEXA.Adapters.Output;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -27,7 +28,23 @@ public class WindowResizeCoordinator
     public WindowResizeState State => _resizeDetector.State;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="WindowResizeCoordinator"/> class.
+    /// Initializes a new instance of the <see cref="WindowResizeCoordinator"/> class using display resolution from an input sink.
+    /// </summary>
+    /// <param name="inputSink">Optional input sink to query screen resolution.</param>
+    /// <param name="resizeDetector">Optional custom resize detector.</param>
+    public WindowResizeCoordinator(
+        IInputSink? inputSink = null,
+        WindowResizeDetector? resizeDetector = null)
+    {
+        IInputSink sink = inputSink ?? new Win32InputSink();
+        (int width, int height) = sink.GetScreenResolution();
+        _screenWidth = width > 0 ? width : 1920;
+        _screenHeight = height > 0 ? height : 1080;
+        _resizeDetector = resizeDetector ?? new WindowResizeDetector();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="WindowResizeCoordinator"/> class with explicit monitor dimensions.
     /// </summary>
     /// <param name="screenWidth">Monitor display width in pixels.</param>
     /// <param name="screenHeight">Monitor display height in pixels.</param>
