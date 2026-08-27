@@ -4,6 +4,7 @@ using NEXA.Abstractions;
 using NEXA.Adapters.Capture;
 using NEXA.Adapters.Output;
 using NEXA.Application;
+using NEXA.Configuration;
 using NEXA.Domain.Click;
 using NEXA.Domain.EarsMute;
 using NEXA.Domain.Grab;
@@ -41,6 +42,10 @@ public static class ServiceCollectionExtensions
         string palmModelPath,
         string landmarkModelPath)
     {
+        // 0. Configuration & Pipeline Channels
+        services.AddSingleton<NexaConfiguration>();
+        services.AddSingleton<FrameProcessingPipeline>();
+
         // 1. Output Sinks & Interop Adapters
         services.AddSingleton<IInputSink, Win32InputSink>();
         services.AddSingleton<IAudioSink, Win32AudioSink>();

@@ -27,13 +27,20 @@ public class PalmDetector : IDisposable
     private const int InputWidth = 192;
     private const int InputHeight = 192;
 
+    // Zero-allocation reusable OpenCV matrices and tensor buffer
+    private readonly Mat _resizedMat = new();
+    private readonly Mat _paddedMat = new();
+    private readonly Mat _rgbMat = new();
+    private readonly DenseTensor<float> _inputTensor = new([1, InputHeight, InputWidth, 3]);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PalmDetector"/> class, loading the ONNX model and generating anchor boxes.
     /// </summary>
     /// <param name="modelPath">The file path to the palm_detection.onnx model.</param>
     /// <param name="scoreThreshold">Minimum confidence score required for candidate boxes (default: 0.6f).</param>
     /// <param name="nmsThreshold">IoU threshold used during Non-Maximum Suppression to remove duplicates (default: 0.3f).</param>
-    public PalmDetector(string modelPath, float scoreThreshold = 0.6f, float nmsThreshold = 0.3f)
+    /// <param name="enableGpu">Whether to attempt DirectML GPU hardware acceleration with automatic CPU fallback.</param>
+    public PalmDetector(string modelPath, float scoreThreshold = 0.6f, float nmsThreshold = 0.3f, bool enableGpu = true)
     {
         _scoreThreshold = scoreThreshold;
         _nmsThreshold = nmsThreshold;
@@ -43,6 +50,18 @@ public class PalmDetector : IDisposable
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
         };
+
+        if (enableGpu)
+        {
+            try
+            {
+                options.AppendExecutionProvider_DML(0);
+            }
+            catch
+            {
+                // Graceful fallback to CPU Execution Provider
+            }
+        }
 
         _session = new InferenceSession(modelPath, options);
         _anchors = PalmAnchorGenerator.GenerateAnchors();
@@ -71,31 +90,24 @@ public class PalmDetector : IDisposable
         int padRight = padW - padLeft;
         int padBottom = padH - padTop;
 
-        using Mat resized = new();
-        Cv2.Resize(image, resized, new Size(targetW, targetH));
+        Cv2.Resize(image, _resizedMat, new Size(targetW, targetH));
+        Cv2.CopyMakeBorder(_resizedMat, _paddedMat, padTop, padBottom, padLeft, padRight, BorderTypes.Constant, Scalar.All(0));
+        Cv2.CvtColor(_paddedMat, _rgbMat, ColorConversionCodes.BGR2RGB);
 
-        using Mat padded = new();
-        Cv2.CopyMakeBorder(resized, padded, padTop, padBottom, padLeft, padRight, BorderTypes.Constant, Scalar.All(0));
-
-        using Mat rgb = new();
-        Cv2.CvtColor(padded, rgb, ColorConversionCodes.BGR2RGB);
-
-        // 3. Populate ONNX dense float tensor [Batch=1, Height=192, Width=192, Channels=3]
-        DenseTensor<float> tensor = new([1, InputHeight, InputWidth, 3]);
-
+        // 3. Populate preallocated ONNX dense float tensor [Batch=1, Height=192, Width=192, Channels=3]
         unsafe
         {
-            byte* ptr = (byte*)rgb.Data.ToPointer();
-            int step = (int)rgb.Step();
+            byte* ptr = (byte*)_rgbMat.Data.ToPointer();
+            int step = (int)_rgbMat.Step();
 
             for (int y = 0; y < InputHeight; y++)
             {
                 byte* row = ptr + y * step;
                 for (int x = 0; x < InputWidth; x++)
                 {
-                    tensor[0, y, x, 0] = row[x * 3 + 0] / 255.0f;
-                    tensor[0, y, x, 1] = row[x * 3 + 1] / 255.0f;
-                    tensor[0, y, x, 2] = row[x * 3 + 2] / 255.0f;
+                    _inputTensor[0, y, x, 0] = row[x * 3 + 0] / 255.0f;
+                    _inputTensor[0, y, x, 1] = row[x * 3 + 1] / 255.0f;
+                    _inputTensor[0, y, x, 2] = row[x * 3 + 2] / 255.0f;
                 }
             }
         }
@@ -103,7 +115,7 @@ public class PalmDetector : IDisposable
         // 4. Execute ONNX inference
         List<NamedOnnxValue> inputs =
         [
-            NamedOnnxValue.CreateFromTensor("input_1", tensor)
+            NamedOnnxValue.CreateFromTensor("input_1", _inputTensor)
         ];
 
         using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
@@ -146,6 +158,9 @@ public class PalmDetector : IDisposable
     /// </summary>
     public void Dispose()
     {
+        _resizedMat.Dispose();
+        _paddedMat.Dispose();
+        _rgbMat.Dispose();
         _session.Dispose();
         GC.SuppressFinalize(this);
     }

@@ -13,37 +13,12 @@ namespace NEXA.Hand;
 /// <para>
 /// <b>What it is:</b> A high-precision deep learning regressor that estimates 21 anatomical 3D finger joints from an isolated hand crop.
 /// </para>
-/// <para>
-/// <b>What it does:</b>
-/// <list type="number">
-/// <item><description>Extracts the detected palm bounding box and computes the 2D roll angle between wrist and middle finger MCP joint.</description></item>
-/// <item><description>Rotates and letterboxes the hand crop to align the hand vertically upright (224x224 input tensor).</description></item>
-/// <item><description>Runs ONNX neural network inference to predict 21 3D joint coordinates, hand presence score, handedness (left/right), and world metric coordinates.</description></item>
-/// <item><description>Applies inverse affine transformation matrices to un-rotate and map coordinates back into original camera image space.</description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> The neural network is trained exclusively on upright canonical hand crops; rotating the hand beforehand ensures reliable landmark detection regardless of how the user tilts or turns their wrist in 3D space.
-/// </para>
-/// <para>
-/// <b>Consequence:</b> Yields millimeter-accurate 2D/3D skeleton joints suitable for gesture classification, mouse pointing, and 3D interaction.
-/// </para>
 /// </summary>
 public class HandLandmarkEstimator : IDisposable
 {
-    /// <summary>
-    /// The active ONNX Runtime inference engine holding the handpose_estimation.onnx neural network in memory.
-    /// </summary>
     private readonly InferenceSession _session;
-
-    /// <summary>
-    /// Minimum confidence threshold (0.0f to 1.0f) required to accept the estimated landmarks as valid.
-    /// </summary>
     private readonly float _confThreshold;
 
-    /// <summary>
-    /// Fixed input resolution (224x224) required by the MediaPipe Hand Landmark ONNX model tensor shape [1, 224, 224, 3].
-    /// </summary>
     private const int InputSize = 224;
 
     private static readonly float[] PalmBoxPreShift = { 0f, 0f };
@@ -53,12 +28,19 @@ public class HandLandmarkEstimator : IDisposable
     private static readonly float[] HandBoxShift = { 0f, -0.1f };
     private const float HandBoxEnlarge = 1.65f;
 
+    // Zero-allocation reusable OpenCV matrices and tensor buffer
+    private readonly Mat _rgbMat = new();
+    private readonly Mat _rotatedImage = new();
+    private readonly Mat _resizedCrop = new();
+    private readonly DenseTensor<float> _inputTensor = new([1, InputSize, InputSize, 3]);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="HandLandmarkEstimator"/> class, configuring the ONNX inference session.
     /// </summary>
     /// <param name="modelPath">The file path to the handpose_estimation.onnx model.</param>
     /// <param name="confThreshold">Minimum presence confidence threshold (default: 0.7f).</param>
-    public HandLandmarkEstimator(string modelPath, float confThreshold = 0.7f)
+    /// <param name="enableGpu">Whether to attempt DirectML GPU hardware acceleration with automatic CPU fallback.</param>
+    public HandLandmarkEstimator(string modelPath, float confThreshold = 0.7f, bool enableGpu = true)
     {
         _confThreshold = confThreshold;
         SessionOptions options = new() 
@@ -66,6 +48,19 @@ public class HandLandmarkEstimator : IDisposable
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
         };
+
+        if (enableGpu)
+        {
+            try
+            {
+                options.AppendExecutionProvider_DML(0);
+            }
+            catch
+            {
+                // Graceful fallback to CPU Execution Provider
+            }
+        }
+
         _session = new InferenceSession(modelPath, options);
     }
 
@@ -80,8 +75,7 @@ public class HandLandmarkEstimator : IDisposable
         // 1. Initial crop and square padding to allow full 360-degree in-plane rotation without clipping corners
         (Mat crop1, Rect2f palmBox1, Point2f bias1) = CropAndPadFromPalm(frame, palm.Box, forRotation: true);
         using Mat? crop1Mat = crop1;
-        using Mat rgbMat = new();
-        Cv2.CvtColor(crop1Mat, rgbMat, ColorConversionCodes.BGR2RGB);
+        Cv2.CvtColor(crop1Mat, _rgbMat, ColorConversionCodes.BGR2RGB);
 
         Point2f padBias = new(bias1.X, bias1.Y);
 
@@ -101,8 +95,7 @@ public class HandLandmarkEstimator : IDisposable
 
         // Compute 2D affine rotation matrix around palm center
         using Mat? rotMat = Cv2.GetRotationMatrix2D(centerPalmBox, angleDeg, 1.0);
-        using Mat rotatedImage = new();
-        Cv2.WarpAffine(rgbMat, rotatedImage, rotMat, new Size(rgbMat.Width, rgbMat.Height));
+        Cv2.WarpAffine(_rgbMat, _rotatedImage, rotMat, new Size(_rgbMat.Width, _rgbMat.Height));
 
         double m00 = rotMat.At<double>(0, 0);
         double m01 = rotMat.At<double>(0, 1);
@@ -129,32 +122,30 @@ public class HandLandmarkEstimator : IDisposable
         Rect2f rotPalmBox = new(minX, minY, Math.Max(1f, maxX - minX), Math.Max(1f, maxY - minY));
 
         // 2. Crop the upright rotated hand and resize to 224x224 for neural network input
-        (Mat crop2, Rect2f rotPalmBoxEnlarged, _) = CropAndPadFromPalm(rotatedImage, rotPalmBox, forRotation: false);
+        (Mat crop2, Rect2f rotPalmBoxEnlarged, _) = CropAndPadFromPalm(_rotatedImage, rotPalmBox, forRotation: false);
         using Mat? crop2Mat = crop2;
-        using Mat resizedCrop = new();
-        Cv2.Resize(crop2Mat, resizedCrop, new Size(InputSize, InputSize), 0, 0, InterpolationFlags.Area);
+        Cv2.Resize(crop2Mat, _resizedCrop, new Size(InputSize, InputSize), 0, 0, InterpolationFlags.Area);
 
-        // Prepare ONNX dense tensor [Batch=1, Height=224, Width=224, Channels=3]
-        DenseTensor<float> tensor = new([1, InputSize, InputSize, 3]);
+        // Prepare preallocated ONNX dense tensor [Batch=1, Height=224, Width=224, Channels=3]
         unsafe
         {
-            byte* ptr = (byte*)resizedCrop.Data.ToPointer();
-            int step = (int)resizedCrop.Step();
+            byte* ptr = (byte*)_resizedCrop.Data.ToPointer();
+            int step = (int)_resizedCrop.Step();
             for (int y = 0; y < InputSize; y++)
             {
                 byte* row = ptr + y * step;
                 for (int x = 0; x < InputSize; x++)
                 {
-                    tensor[0, y, x, 0] = row[x * 3 + 0] / 255.0f;
-                    tensor[0, y, x, 1] = row[x * 3 + 1] / 255.0f;
-                    tensor[0, y, x, 2] = row[x * 3 + 2] / 255.0f;
+                    _inputTensor[0, y, x, 0] = row[x * 3 + 0] / 255.0f;
+                    _inputTensor[0, y, x, 1] = row[x * 3 + 1] / 255.0f;
+                    _inputTensor[0, y, x, 2] = row[x * 3 + 2] / 255.0f;
                 }
             }
         }
 
         List<NamedOnnxValue> inputs =
         [
-            NamedOnnxValue.CreateFromTensor("input_1", tensor)
+            NamedOnnxValue.CreateFromTensor("input_1", _inputTensor)
         ];
 
         // 3. Execute ONNX landmark inference
@@ -165,11 +156,6 @@ public class HandLandmarkEstimator : IDisposable
         float score = 0f;
         float handedness = 0f;
 
-        // Output mappings:
-        // "Identity": 21 3D normalized landmarks [1, 63]
-        // "Identity_1": Hand presence confidence score [1, 1]
-        // "Identity_2": Handedness score [1, 1] (0.0 = Left, 1.0 = Right)
-        // "Identity_3": 21 3D world metric landmarks in meters [1, 63]
         foreach (NamedOnnxValue outVal in outputs)
         {
             if (outVal.Name == "Identity")
@@ -328,6 +314,9 @@ public class HandLandmarkEstimator : IDisposable
     /// </summary>
     public void Dispose()
     {
+        _rgbMat.Dispose();
+        _rotatedImage.Dispose();
+        _resizedCrop.Dispose();
         _session.Dispose();
         GC.SuppressFinalize(this);
     }
