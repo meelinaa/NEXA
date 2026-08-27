@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NEXA.Adapters.Output;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -5,9 +6,9 @@ using OpenCvSharp;
 namespace NEXA.Domain.Lock;
 
 /// <summary>
-/// Application adapter orchestrating multi-stage security gesture evaluation, Windows OS session locking, and augmented reality milestone HUD rendering.
+/// Application adapter orchestrating dual-hand multi-stage security gesture evaluation, Windows OS session locking, and augmented reality milestone HUD rendering.
 /// <para>
-/// <b>What it is:</b> The controller executing PC lock commands upon completion of the 🖐️ &rarr; ✊ &rarr; 🖐️ &rarr; ✊ sequence.
+/// <b>What it is:</b> The controller executing PC lock commands upon completion of the 🖐️🖐️ &rarr; ✊✊ &rarr; 🖐️🖐️ &rarr; ✊✊ sequence.
 /// </para>
 /// </summary>
 public class LockSequenceController
@@ -51,12 +52,12 @@ public class LockSequenceController
     }
 
     /// <summary>
-    /// Evaluates the tracked hand for the current frame and executes a workstation lock if the 4-step sequence completes.
+    /// Evaluates the tracked hands for the current frame and executes a workstation lock if the 4-step dual-hand sequence completes.
     /// </summary>
-    /// <param name="hand">The primary tracked hand.</param>
-    public void Update(TrackedHand? hand)
+    /// <param name="hands">The active tracked hands (must have at least 2 hands).</param>
+    public void Update(List<TrackedHand>? hands)
     {
-        bool shouldLock = Detector.Update(hand);
+        bool shouldLock = Detector.Update(hands);
         if (shouldLock)
         {
             _inputSink.LockWorkstation();
@@ -67,9 +68,9 @@ public class LockSequenceController
     /// Renders visual sequence milestones and countdown progress bars onto the camera frame.
     /// </summary>
     /// <param name="frame">The camera image frame to draw on.</param>
-    /// <param name="hand">The primary tracked hand.</param>
-    public void RenderFeedback(Mat frame, TrackedHand? hand)
+    /// <param name="hands">The active tracked hands.</param>
+    public void RenderFeedback(Mat frame, List<TrackedHand>? hands)
     {
-        _renderer.Render(frame, hand, State);
+        _renderer.Render(frame, hands, State);
     }
 }

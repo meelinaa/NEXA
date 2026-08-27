@@ -153,7 +153,7 @@ public class NexaEngine
             _twoHandController.Update(trackedHands, frame.Width, frame.Height);
             _monitorThrowController.Update(primaryHand);
             _volumeController.Update(primaryHand);
-            _lockController.Update(primaryHand);
+            _lockController.Update(trackedHands);
             _circleUndoController.Update(primaryHand);
             _shhhMuteController.Update(primaryHand, primaryFace);
             _hearNoEvilController.Update(trackedHands, primaryFace);
@@ -168,7 +168,7 @@ public class NexaEngine
             _twoHandController.RenderFeedback(frame, trackedHands);
             _monitorThrowController.RenderFeedback(frame, primaryHand);
             _volumeController.RenderFeedback(frame);
-            _lockController.RenderFeedback(frame, primaryHand);
+            _lockController.RenderFeedback(frame, trackedHands);
             _circleUndoController.RenderFeedback(frame, primaryHand);
             _shhhMuteController.RenderFeedback(frame, primaryFace, primaryHand);
             _hearNoEvilController.RenderFeedback(frame, primaryFace, trackedHands);

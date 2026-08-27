@@ -67,10 +67,6 @@ public class HearNoEvilController
             _audioSink.ToggleMute();
             State.IsSpeakerMuted = _audioSink.IsMuted();
             State.LastToggleTime = DateTime.Now;
-
-            Console.ForegroundColor = State.IsSpeakerMuted ? ConsoleColor.Red : ConsoleColor.Green;
-            Console.WriteLine($"\n[AUDIO TOGGLE] Hear No Evil (Hands to Ears) -> Master Speaker Output {(State.IsSpeakerMuted ? "MUTED 🔇" : "UNMUTED 🔊")}\n");
-            Console.ResetColor();
         }
     }
 

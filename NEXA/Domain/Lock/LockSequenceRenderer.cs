@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -17,14 +18,14 @@ public class LockSequenceRenderer
     /// Renders visual sequence milestones and countdown progress bars onto the camera frame.
     /// </summary>
     /// <param name="frame">The camera image frame to draw on.</param>
-    /// <param name="hand">The primary tracked hand.</param>
+    /// <param name="hands">The active tracked hands.</param>
     /// <param name="state">The lock sequence state container.</param>
-    public void Render(Mat frame, TrackedHand? hand, LockSequenceState state)
+    public void Render(Mat frame, List<TrackedHand>? hands, LockSequenceState state)
     {
         DateTime now = DateTime.Now;
 
         // 1. Render Active Sequence 4-Step Badge
-        if (state.CurrentStep != LockSequenceStep.Idle && hand != null)
+        if (state.CurrentStep != LockSequenceStep.Idle && hands != null && hands.Count >= 2)
         {
             int stepNum = (int)state.CurrentStep;
             Point handCenter = new((int)state.LastHandPos.X, (int)state.LastHandPos.Y);
