@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using Microsoft.ML.OnnxRuntime;
 using NEXA.Adapters.Output;
 using NEXA.Common;
 using NEXA.Domain.Click;
@@ -457,6 +458,7 @@ Console.WriteLine("  [J]         : Toggle Skeleton Joint Nodes");
 Console.WriteLine("  [B]         : Toggle Bounding Box & HUD Tag");
 Console.WriteLine("  [R]         : Reset Virtual Object (Pos & Zoom)");
 Console.WriteLine("  [H]         : Toggle Telemetry HUD Overlay\n");
+Console.WriteLine("  [F]         : Toggle Face Tracking");
 
 int frameCount = 0;
 double currentFps = 0.0;
@@ -617,8 +619,8 @@ while (true)
     }
     else if (key == 'f' || key == 'F')
     {
-        faceMeshRenderer.ShowPoints = !faceMeshRenderer.ShowPoints;
-        faceMeshRenderer.ShowContours = !faceMeshRenderer.ShowContours;
+        faceMeshRenderer.ShowMeshWidget = !faceMeshRenderer.ShowMeshWidget;
+        faceMeshRenderer.ShowHeadBoundingBox = !faceMeshRenderer.ShowHeadBoundingBox;
     }
     else if (key == 's' || key == 'S')
     {

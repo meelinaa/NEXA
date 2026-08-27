@@ -71,14 +71,11 @@ public class ShhhMuteController
     {
         DateTime now = DateTime.Now;
 
-        // 1. Render Subtle Face Bounding Box & Mouth Target Reticle
+        // 1. Render Charging Progress Ring when 4 fingers enter proximity
         if (face != null && Enabled)
         {
             Point mouthPt = new((int)Math.Round(face.MouthCenter.X), (int)Math.Round(face.MouthCenter.Y));
             int mouthR = (int)Math.Round(face.MouthRadius * 1.50);
-
-            // Subtle target circle around mouth
-            Cv2.Circle(frame, mouthPt, mouthR, new Scalar(40, 45, 60), 1, LineTypes.AntiAlias);
 
             // Charging progress ring when 4 fingers enter proximity
             if (State.IsInProximity && State.HoldProgress > 0.05)

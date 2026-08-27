@@ -4,22 +4,9 @@ using OpenCvSharp;
 namespace NEXA.Face;
 
 /// <summary>
-/// Domain data transfer model representing a detected human face with all 68 Dlib facial landmark contour points, spatial bounding box, and tracked mouth region.
+/// Domain data transfer model representing a detected human face with all 468 MediaPipe facial landmark contour points, spatial bounding box, and tracked mouth region.
 /// <para>
-/// <b>What it is:</b> The 68-point facial telemetry model powering Dlib face tracking and the "Shhh" mute gesture.
-/// </para>
-/// <para>
-/// <b>Landmark Indices (Dlib 68 Standard):</b>
-/// <list type="bullet">
-/// <item><description>Jawline: Points [0..16]</description></item>
-/// <item><description>Right Eyebrow: Points [17..21]</description></item>
-/// <item><description>Left Eyebrow: Points [22..26]</description></item>
-/// <item><description>Nose Bridge &amp; Tip: Points [27..35]</description></item>
-/// <item><description>Right Eye: Points [36..41]</description></item>
-/// <item><description>Left Eye: Points [42..47]</description></item>
-/// <item><description>Outer Lips: Points [48..59]</description></item>
-/// <item><description>Inner Lips: Points [60..67]</description></item>
-/// </list>
+/// <b>What it is:</b> The 468-point facial telemetry model powering MediaPipe FaceMesh tracking and the "Shhh" mute gesture.
 /// </para>
 /// </summary>
 public class TrackedFace
@@ -30,9 +17,14 @@ public class TrackedFace
     public Rect2f BoundingBox { get; set; }
 
     /// <summary>
-    /// All 68 discrete facial landmark contour coordinates in camera pixel space.
+    /// All 468 discrete 2D facial landmark contour coordinates in camera pixel space.
     /// </summary>
-    public Point2f[] Landmarks68 { get; set; } = new Point2f[68];
+    public Point2f[] Landmarks { get; set; } = new Point2f[468];
+
+    /// <summary>
+    /// Compatibility alias referencing facial landmarks.
+    /// </summary>
+    public Point2f[] Landmarks68 => Landmarks;
 
     /// <summary>
     /// The exact center point of the mouth lips in camera pixel coordinates.
@@ -45,17 +37,17 @@ public class TrackedFace
     public float MouthRadius { get; set; }
 
     /// <summary>
-    /// Estimated position of the left eye.
+    /// Estimated position of the left eye pupil / center (Landmark 386).
     /// </summary>
     public Point2f LeftEye { get; set; }
 
     /// <summary>
-    /// Estimated position of the right eye.
+    /// Estimated position of the right eye pupil / center (Landmark 159).
     /// </summary>
     public Point2f RightEye { get; set; }
 
     /// <summary>
-    /// Estimated position of the nose tip (Landmark 30).
+    /// Estimated position of the nose tip (Landmark 1).
     /// </summary>
     public Point2f NoseTip { get; set; }
 
