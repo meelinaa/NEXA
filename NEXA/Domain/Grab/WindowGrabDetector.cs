@@ -1,5 +1,7 @@
 using System;
-using NEXA.Adapters.Output;
+using System.Diagnostics;
+using NEXA.Abstractions;
+using NEXA.Filter;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -15,7 +17,7 @@ namespace NEXA.Domain.Grab;
 /// <list type="number">
 /// <item><description><b>Hold Detection &amp; Auto-Resize:</b> Holding a fist for 2.0s over a window engages dragging and automatically resizes the window to 50% width and 50% height (1/4 screen area) centered under the hand.</description></item>
 /// <item><description><b>Delta Dragging:</b> Translates the window by tracking relative hand coordinate changes from the initial grab anchor.</description></item>
-/// <item><description><b>Delegated Snap &amp; Motion Processing:</b> Delegates 8-zone docking to <see cref="WindowSnapEngine"/>, coordinate conversion to <see cref="WindowCoordinateMapper"/>, and jitter smoothing to <see cref="WindowGrabSmoother"/>.</description></item>
+/// <item><description><b>Delegated Snap &amp; Motion Processing:</b> Delegates 8-zone docking to <see cref="WindowSnapEngine"/>, coordinate conversion to <see cref="WindowCoordinateMapper"/>, and adaptive motion smoothing to <see cref="OneEuroFilter2D"/>.</description></item>
 /// <item><description><b>Release Debouncing:</b> Enforces a 120ms buffer to absorb temporary tracking flutter without dropping the window.</description></item>
 /// </list>
 /// </para>
@@ -24,7 +26,8 @@ public class WindowGrabDetector
 {
     private readonly WindowCoordinateMapper _coordinateMapper;
     private readonly WindowSnapEngine _snapEngine;
-    private readonly WindowGrabSmoother _smoother;
+    private readonly OneEuroFilter2D _smoother;
+    private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
 
     /// <summary>
     /// Gets the internal state container tracking hold durations, drag deltas, and snap alignments.
@@ -53,17 +56,17 @@ public class WindowGrabDetector
     /// <param name="screenHeight">Monitor display height in pixels.</param>
     /// <param name="coordinateMapper">Optional custom coordinate mapper.</param>
     /// <param name="snapEngine">Optional custom snap engine.</param>
-    /// <param name="smoother">Optional custom smoother.</param>
+    /// <param name="smoother">Optional custom 2D OneEuroFilter instance.</param>
     public WindowGrabDetector(
         int screenWidth,
         int screenHeight,
         WindowCoordinateMapper? coordinateMapper = null,
         WindowSnapEngine? snapEngine = null,
-        WindowGrabSmoother? smoother = null)
+        OneEuroFilter2D? smoother = null)
     {
         _coordinateMapper = coordinateMapper ?? new WindowCoordinateMapper(screenWidth, screenHeight);
         _snapEngine = snapEngine ?? new WindowSnapEngine(screenWidth, screenHeight);
-        _smoother = smoother ?? new WindowGrabSmoother();
+        _smoother = smoother ?? new OneEuroFilter2D(freq: 30, minCutoff: 1.2, beta: 0.02);
     }
 
     /// <summary>
@@ -88,6 +91,7 @@ public class WindowGrabDetector
 
         string currentGesture = hand?.Gesture ?? string.Empty;
         bool isFist = currentGesture == "Fist";
+        double timestamp = _stopwatch.Elapsed.TotalSeconds;
 
         if (!isFist)
         {
@@ -155,7 +159,8 @@ public class WindowGrabDetector
                     State.CurrentTargetY = grabY;
                     State.ActiveSnap = WindowSnapType.None;
 
-                    _smoother.SetPosition(grabX, grabY);
+                    _smoother.Reset();
+                    _smoother.Filter(new Point2f(grabX, grabY), timestamp);
                 }
                 else
                 {
@@ -188,7 +193,8 @@ public class WindowGrabDetector
 
             if (shouldReanchor)
             {
-                _smoother.SetPosition(reanchoredX, reanchoredY);
+                _smoother.Reset();
+                _smoother.Filter(new Point2f(reanchoredX, reanchoredY), timestamp);
             }
 
             if (State.IsSnapped)
@@ -198,7 +204,10 @@ public class WindowGrabDetector
                 return (true, State.TargetHwnd, State.CurrentTargetX, State.CurrentTargetY);
             }
 
-            (int smoothedX, int smoothedY) = _smoother.Smooth(rawTargetX, rawTargetY);
+            Point2f smoothed = _smoother.Filter(new Point2f((float)rawTargetX, (float)rawTargetY), timestamp);
+            int smoothedX = (int)Math.Round(smoothed.X);
+            int smoothedY = (int)Math.Round(smoothed.Y);
+
             State.CurrentTargetX = smoothedX;
             State.CurrentTargetY = smoothedY;
 

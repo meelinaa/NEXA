@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using NEXA.Adapters.Output;
+using NEXA.Abstractions;
 using NEXA.Hand;
 using OpenCvSharp;
 

@@ -1,5 +1,5 @@
 using System;
-using NEXA.Adapters.Output;
+using NEXA.Abstractions;
 using NEXA.Hand;
 using OpenCvSharp;
 

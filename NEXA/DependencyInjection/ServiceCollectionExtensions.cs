@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using NEXA.Abstractions;
 using NEXA.Adapters.Output;
 using NEXA.Application;
 using NEXA.Domain.Click;
@@ -71,7 +72,8 @@ public static class ServiceCollectionExtensions
 
         // 4. Domain Engines & Detectors
         services.AddSingleton<VirtualObjectGrabEngine>();
-        services.AddSingleton<VirtualObjectZoomEngine>();
+        services.AddSingleton<WindowResizeDetector>();
+        services.AddSingleton<WindowSnapEngine>();
         services.AddSingleton<ScrollDetector>();
         services.AddSingleton<VolumeDetector>();
         services.AddSingleton<LockSequenceDetector>();

@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using NEXA.Abstractions;
 
 namespace NEXA.Adapters.Output;
 

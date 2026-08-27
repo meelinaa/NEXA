@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using NEXA.Abstractions;
 using NEXA.Adapters.Output;
 using NEXA.Domain.Click;
 using NEXA.Domain.EarsMute;

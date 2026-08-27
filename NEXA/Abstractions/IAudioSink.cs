@@ -1,23 +1,17 @@
-namespace NEXA.Adapters.Output;
+namespace NEXA.Abstractions;
 
 /// <summary>
-/// Output port abstraction interface for querying and controlling Windows system master audio volume and mute states.
+/// Abstraction sink for system master audio output volume adjustments, speaker muting, and microphone hardware input muting.
 /// <para>
-/// <b>What it is:</b> A decoupled contract defining operating system master audio hardware control.
-/// </para>
-/// <para>
-/// <b>What it does:</b> Provides unified methods for reading and adjusting master audio scalar levels [0.0 to 1.0].
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> Isolates native Windows Core Audio COM Interop from domain-level rotary angle calculations, enabling clean unit testing and mockability.
+/// <b>What it is:</b> Interface decoupling audio endpoint management from Windows CoreAudio WASAPI COM interop.
 /// </para>
 /// </summary>
 public interface IAudioSink
 {
     /// <summary>
-    /// Retrieves the current system master volume scalar level.
+    /// Gets the current system master volume scalar level.
     /// </summary>
-    /// <returns>A normalized float between 0.0 (silent) and 1.0 (100% maximum volume).</returns>
+    /// <returns>Normalized float between 0.0 (silent) and 1.0 (100% maximum volume).</returns>
     float GetMasterVolume();
 
     /// <summary>

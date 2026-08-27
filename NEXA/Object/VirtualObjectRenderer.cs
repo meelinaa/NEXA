@@ -1,4 +1,5 @@
 using System;
+using NEXA.Domain.Grab;
 using OpenCvSharp;
 
 namespace NEXA.Object;
@@ -17,15 +18,16 @@ public class VirtualObjectRenderer
     /// <param name="frame">The camera image frame to draw on.</param>
     /// <param name="target">The virtual test object containing position and dimensions.</param>
     /// <param name="grabState">The grab state machine tracking hold and active state.</param>
-    /// <param name="zoomState">The zoom state machine tracking continuous magnification.</param>
+    /// <param name="resizeState">The resize state machine tracking continuous magnification.</param>
     public void Render(
         Mat frame,
         TestObject target,
         GrabState grabState,
-        ZoomState zoomState)
+        WindowResizeState resizeState)
     {
-        int targetW = (int)Math.Round(target.BaseWidth * zoomState.CurrentZoom);
-        int targetH = (int)Math.Round(target.BaseHeight * zoomState.CurrentZoom);
+        double scale = resizeState.IsActive && resizeState.CurrentScale > 0 ? resizeState.CurrentScale : 1.0;
+        int targetW = (int)Math.Round(target.BaseWidth * scale);
+        int targetH = (int)Math.Round(target.BaseHeight * scale);
 
         int left = (int)Math.Round(target.X - targetW / 2.0);
         int top = (int)Math.Round(target.Y - targetH / 2.0);
@@ -51,15 +53,15 @@ public class VirtualObjectRenderer
             double remaining = Math.Max(0, grabState.RequiredHoldTime - grabState.HoldDurationSeconds);
             statusTag = $"[HOLD: {remaining:F1}s]";
         }
-        else if (zoomState.Active)
+        else if (resizeState.IsActive)
         {
             themeColor = new Scalar(0, 230, 255); // Glowing Gold
-            statusTag = $"[ZOOM: {zoomState.CurrentZoom:F2}x]";
+            statusTag = $"[ZOOM: {scale:F2}x]";
         }
         else
         {
             themeColor = new Scalar(255, 180, 50); // Futuristic Cyan
-            statusTag = $"[IDLE: {zoomState.CurrentZoom:F2}x]";
+            statusTag = $"[IDLE: {scale:F2}x]";
         }
 
         // 1. Semi-transparent backdrop

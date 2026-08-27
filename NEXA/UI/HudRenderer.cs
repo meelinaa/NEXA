@@ -302,7 +302,7 @@ public class HudRenderer
             HersheyFonts.HersheySimplex, 0.36, soundColor, 1, LineTypes.AntiAlias);
 
         string grabLabel = objCtrl.GrabState.Active ? "GRABBED" : (objCtrl.GrabState.HoldDurationSeconds > 0 ? $"HOLD {objCtrl.GrabState.HoldDurationSeconds:F1}s" : "Ready");
-        string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.ZoomState.CurrentZoom:F2}x (R)";
+        string objStatus = $"Testobjekt: {grabLabel} | Zoom: {objCtrl.CurrentScale:F2}x (R)";
         Cv2.PutText(frame, TextSanitizer.ToSafeAscii(objStatus), new Point(20, 246),
             HersheyFonts.HersheySimplex, 0.34, new Scalar(200, 200, 200), 1, LineTypes.AntiAlias);
     }

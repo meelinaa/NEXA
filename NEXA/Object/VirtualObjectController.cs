@@ -1,3 +1,4 @@
+using NEXA.Domain.Grab;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -12,7 +13,7 @@ namespace NEXA.Object;
 public class VirtualObjectController
 {
     private readonly VirtualObjectGrabEngine _grabEngine;
-    private readonly VirtualObjectZoomEngine _zoomEngine;
+    private readonly WindowResizeDetector _resizeDetector;
     private readonly VirtualObjectRenderer _renderer;
 
     /// <summary>
@@ -21,9 +22,14 @@ public class VirtualObjectController
     public TestObject TargetObject { get; } = new();
 
     /// <summary>
-    /// The zoom state machine tracking continuous magnification factors.
+    /// The window resize detector used for stepless continuous scaling.
     /// </summary>
-    public ZoomState ZoomState => _zoomEngine.State;
+    public WindowResizeDetector ResizeDetector => _resizeDetector;
+
+    /// <summary>
+    /// Gets the current scale multiplier of the virtual test object.
+    /// </summary>
+    public double CurrentScale => _resizeDetector.State.IsActive && _resizeDetector.State.CurrentScale > 0 ? _resizeDetector.State.CurrentScale : 1.0;
 
     /// <summary>
     /// The grab state machine tracking fist hold timers and spatial offset locks.
@@ -34,15 +40,15 @@ public class VirtualObjectController
     /// Initializes a new instance of the <see cref="VirtualObjectController"/> class.
     /// </summary>
     /// <param name="grabEngine">Optional custom grab engine.</param>
-    /// <param name="zoomEngine">Optional custom zoom engine.</param>
+    /// <param name="resizeDetector">Optional custom resize detector.</param>
     /// <param name="renderer">Optional custom renderer.</param>
     public VirtualObjectController(
         VirtualObjectGrabEngine? grabEngine = null,
-        VirtualObjectZoomEngine? zoomEngine = null,
+        WindowResizeDetector? resizeDetector = null,
         VirtualObjectRenderer? renderer = null)
     {
         _grabEngine = grabEngine ?? new VirtualObjectGrabEngine();
-        _zoomEngine = zoomEngine ?? new VirtualObjectZoomEngine();
+        _resizeDetector = resizeDetector ?? new WindowResizeDetector();
         _renderer = renderer ?? new VirtualObjectRenderer();
     }
 
@@ -57,7 +63,7 @@ public class VirtualObjectController
         if (hand == null)
         {
             _grabEngine.HandleNoHand();
-            _zoomEngine.HandleNoHand();
+            _resizeDetector.Reset();
             return;
         }
 
@@ -68,8 +74,20 @@ public class VirtualObjectController
         // 1. Evaluate Grab interaction (clenched fist with required hold duration)
         _grabEngine.UpdateGrab(TargetObject, palmCenter, currentGesture, frameWidth, frameHeight);
 
-        // 2. Evaluate Zoom interaction (continuous pinch-to-L continuum)
-        _zoomEngine.UpdateZoom(hand, _grabEngine.State.Active);
+        // 2. Evaluate Zoom interaction via shared WindowResizeDetector
+        if (!_grabEngine.State.Active)
+        {
+            _resizeDetector.Update(
+                hand,
+                TargetObject.BaseWidth,
+                TargetObject.BaseHeight,
+                frameWidth,
+                frameHeight);
+        }
+        else
+        {
+            _resizeDetector.Reset();
+        }
     }
 
     /// <summary>
@@ -82,7 +100,7 @@ public class VirtualObjectController
         TargetObject.X = frameWidth - 250;
         TargetObject.Y = frameHeight - 200;
         _grabEngine.Reset();
-        _zoomEngine.Reset();
+        _resizeDetector.Reset();
     }
 
     /// <summary>
@@ -91,6 +109,6 @@ public class VirtualObjectController
     /// <param name="frame">The camera image frame to draw on.</param>
     public void Render(Mat frame)
     {
-        _renderer.Render(frame, TargetObject, GrabState, ZoomState);
+        _renderer.Render(frame, TargetObject, GrabState, _resizeDetector.State);
     }
 }

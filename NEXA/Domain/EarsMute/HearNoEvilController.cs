@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NEXA.Abstractions;
 using NEXA.Adapters.Output;
 using NEXA.Face;
 using NEXA.Hand;
