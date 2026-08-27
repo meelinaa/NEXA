@@ -17,8 +17,8 @@ namespace NEXA.Hand;
 /// </summary>
 public class HandTracker : IDisposable
 {
-    private readonly PalmDetector _palmDetector;
-    private readonly HandLandmarkEstimator _landmarkEstimator;
+    private readonly PalmDetector? _palmDetector;
+    private readonly HandLandmarkEstimator? _landmarkEstimator;
     private readonly Dictionary<int, (OneEuroFilter x, OneEuroFilter y, OneEuroFilter z)> _filters = new();
     private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
 
@@ -33,9 +33,21 @@ public class HandTracker : IDisposable
     /// <param name="palmModelPath">Path to palm_detection.onnx model.</param>
     /// <param name="landmarkModelPath">Path to handpose_estimation.onnx model.</param>
     public HandTracker(string palmModelPath, string landmarkModelPath)
+        : this(
+            System.IO.File.Exists(palmModelPath) ? new PalmDetector(palmModelPath, scoreThreshold: 0.50f, nmsThreshold: 0.3f) : null,
+            System.IO.File.Exists(landmarkModelPath) ? new HandLandmarkEstimator(landmarkModelPath, confThreshold: 0.60f) : null)
     {
-        _palmDetector = new PalmDetector(palmModelPath, scoreThreshold: 0.50f, nmsThreshold: 0.3f);
-        _landmarkEstimator = new HandLandmarkEstimator(landmarkModelPath, confThreshold: 0.60f);
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HandTracker"/> class with optional detector components.
+    /// </summary>
+    /// <param name="palmDetector">Optional custom palm detector instance.</param>
+    /// <param name="landmarkEstimator">Optional custom landmark estimator instance.</param>
+    public HandTracker(PalmDetector? palmDetector = null, HandLandmarkEstimator? landmarkEstimator = null)
+    {
+        _palmDetector = palmDetector;
+        _landmarkEstimator = landmarkEstimator;
 
         for (int i = 0; i < 21; i++)
         {
@@ -57,6 +69,11 @@ public class HandTracker : IDisposable
     public List<TrackedHand> ProcessFrame(Mat frame)
     {
         List<TrackedHand> hands = new();
+        if (_palmDetector == null || _landmarkEstimator == null)
+        {
+            return hands;
+        }
+
         List<PalmDetectionResult> palms = _palmDetector.Detect(frame);
         double timestamp = _stopwatch.Elapsed.TotalSeconds;
 
@@ -118,8 +135,8 @@ public class HandTracker : IDisposable
     /// </summary>
     public void Dispose()
     {
-        _palmDetector.Dispose();
-        _landmarkEstimator.Dispose();
+        _palmDetector?.Dispose();
+        _landmarkEstimator?.Dispose();
         GC.SuppressFinalize(this);
     }
 }

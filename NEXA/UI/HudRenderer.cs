@@ -273,7 +273,7 @@ public class HudRenderer
         }
         else
         {
-            muteStatus = muteCtrl.State.IsMuted ? "STUMM (4 Finger vor Mund)" : "Aktiv (4 Finger vor Mund 🤫)";
+            muteStatus = muteCtrl.State.IsMuted ? "STUMM (4 Finger vor Mund)" : "Aktiv (4 Finger vor Mund)";
             muteColor = muteCtrl.State.IsMuted ? new Scalar(0, 0, 255) : new Scalar(0, 255, 120);
         }
 
@@ -294,7 +294,7 @@ public class HudRenderer
         }
         else
         {
-            soundStatus = earsCtrl.State.IsSpeakerMuted ? "STUMM (Haende an Ohren 🔇)" : "Aktiv (Haende an Ohren 🙉)";
+            soundStatus = earsCtrl.State.IsSpeakerMuted ? "STUMM (Haende an Ohren)" : "Aktiv (Haende an Ohren)";
             soundColor = earsCtrl.State.IsSpeakerMuted ? new Scalar(0, 0, 255) : new Scalar(0, 255, 120);
         }
 

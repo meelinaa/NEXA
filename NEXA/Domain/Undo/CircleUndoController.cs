@@ -6,9 +6,9 @@ using OpenCvSharp;
 namespace NEXA.Domain.Undo;
 
 /// <summary>
-/// Application adapter orchestrating Peace-sign wrist-twist gesture evaluation, Undo/Redo keyboard injection, and holographic AR rotary dial rendering.
+/// Controller coordinating Peace-sign rotational wrist-twist Undo / Redo gestures with OS keyboard injection and AR visual feedback.
 /// <para>
-/// <b>What it is:</b> The controller executing Undo (Ctrl+Z) and Redo (Ctrl+Y) when the user twists their wrist with a Peace sign (✌️).
+/// <b>What it is:</b> The controller executing Undo (Ctrl+Z) and Redo (Ctrl+Y) when the user twists their wrist with a Peace sign.
 /// </para>
 /// </summary>
 public class CircleUndoController

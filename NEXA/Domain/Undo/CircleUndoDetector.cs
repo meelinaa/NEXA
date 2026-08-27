@@ -5,9 +5,9 @@ using OpenCvSharp;
 namespace NEXA.Domain.Undo;
 
 /// <summary>
-/// Domain-level analyzer evaluating the Peace-sign wrist-twist gesture (✌️) to execute Undo and Redo actions.
+/// Domain-level analyzer evaluating the Peace-sign wrist-twist gesture to execute Undo and Redo actions.
 /// <para>
-/// <b>What it is:</b> An angular wrist orientation analyzer tracking rotational wrist tilts like turning a key (🔑).
+/// <b>What it is:</b> An angular wrist orientation analyzer tracking rotational wrist tilts like turning a key.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
@@ -15,8 +15,8 @@ namespace NEXA.Domain.Undo;
 /// <item><description>Detects strict Peace posture (Index and Middle extended in V-shape; other fingers curled).</description></item>
 /// <item><description>Locks the initial orientation baseline upon gesture entry.</description></item>
 /// <item><description>Evaluates intentional wrist tilt within a relaxed 3.0-second interactive window:</description></item>
-/// <item><description>Tilt Left &le; -42&deg; (↺) &rarr; <see cref="CircleUndoAction.Undo"/> (Ctrl + Z).</description></item>
-/// <item><description>Tilt Right &ge; +42&deg; (↻) &rarr; <see cref="CircleUndoAction.Redo"/> (Ctrl + Y).</description></item>
+/// <item><description>Tilt Left &le; -42&deg; (Counter-Clockwise) &rarr; <see cref="CircleUndoAction.Undo"/> (Ctrl + Z).</description></item>
+/// <item><description>Tilt Right &ge; +42&deg; (Clockwise) &rarr; <see cref="CircleUndoAction.Redo"/> (Ctrl + Y).</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -120,7 +120,7 @@ public class CircleUndoDetector
     }
 
     /// <summary>
-    /// Helper evaluating whether the hand is forming a strict Peace / Victory (✌️) posture.
+    /// Helper evaluating whether the hand is forming a strict Peace / Victory posture.
     /// </summary>
     public static bool IsPeacePosture(TrackedHand hand)
     {

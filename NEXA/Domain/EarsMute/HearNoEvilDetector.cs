@@ -7,14 +7,14 @@ using OpenCvSharp;
 namespace NEXA.Domain.EarsMute;
 
 /// <summary>
-/// Domain-level analyzer evaluating the "Hear No Evil" 🙉 two-hands-to-ears posture to toggle master speaker sound output mute.
+/// Domain-level analyzer evaluating the "Hear No Evil" two-hands-to-ears posture to toggle master speaker sound output mute.
 /// <para>
 /// <b>What it is:</b> A multi-modal spatial analyzer correlating facial ear landmarks with two simultaneous hand positions.
 /// </para>
 /// <para>
 /// <b>What it does:</b>
 /// <list type="number">
-/// <item><description>Requires two distinct hands held beside both sides of the head at ear/temple height (palms facing forward as in 🙉).</description></item>
+/// <item><description>Requires two distinct hands held beside both sides of the head at ear/temple height (palms facing forward).</description></item>
 /// <item><description>Evaluates Euclidean proximity across fingertips, MCP knuckles, palm centers, and wrists for both ears simultaneously.</description></item>
 /// <item><description>Requires continuous dual-hand hold inside ear proximity for &ge; 0.35s.</description></item>
 /// <item><description>Enforces a 1.5s refractory cooldown after triggering to eliminate toggle flicker.</description></item>

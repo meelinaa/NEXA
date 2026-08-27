@@ -8,7 +8,7 @@ using OpenCvSharp;
 namespace NEXA.Domain.EarsMute;
 
 /// <summary>
-/// Dedicated AR renderer for Hear No Evil 🙉 hands-to-ears audio mute visual feedback (ear charging rings and status banners).
+/// Dedicated AR renderer for Hear No Evil hands-to-ears audio mute visual feedback (ear charging rings and status banners).
 /// <para>
 /// <b>What it is:</b> Viewport visual feedback presenter for speaker sound mute gestures.
 /// </para>

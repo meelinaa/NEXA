@@ -5,9 +5,9 @@ using OpenCvSharp;
 namespace NEXA.Domain.TwoHand;
 
 /// <summary>
-/// Domain analyzer detecting the two-hand Clap / Prayer (👏 / 🤲) gesture to trigger global media play/pause.
+/// Domain analyzer detecting the two-hand Clap / Prayer gesture to trigger global media play/pause.
 /// <para>
-/// <b>What it is:</b> Spatial collision detector evaluating dual open palms meeting palm-to-palm.
+/// <b>What it is:</b> Spatial multi-hand proximity and velocity kinematics analyzer.
 /// </para>
 /// </summary>
 public class ClapPlayPauseDetector

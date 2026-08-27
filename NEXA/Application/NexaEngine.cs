@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using NEXA.Abstractions;
+using NEXA.Adapters.Capture;
 using NEXA.Adapters.Output;
 using NEXA.Domain.Click;
 using NEXA.Domain.EarsMute;
@@ -50,6 +51,9 @@ public class NexaEngine
     private readonly HearNoEvilController _hearNoEvilController;
     private readonly HudRenderer _hudRenderer;
     private readonly KeyboardCommandHandler _commandHandler;
+    private readonly IFrameSource _frameSource;
+    private readonly IDisplaySink _displaySink;
+    private readonly IKeyboardEventSource _keyboardSource;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NexaEngine"/> class.
@@ -74,7 +78,10 @@ public class NexaEngine
         ShhhMuteController shhhMuteController,
         HearNoEvilController hearNoEvilController,
         HudRenderer hudRenderer,
-        KeyboardCommandHandler commandHandler)
+        KeyboardCommandHandler commandHandler,
+        IFrameSource? frameSource = null,
+        IDisplaySink? displaySink = null,
+        IKeyboardEventSource? keyboardSource = null)
     {
         _tracker = tracker;
         _faceTracker = faceTracker;
@@ -96,6 +103,9 @@ public class NexaEngine
         _hearNoEvilController = hearNoEvilController;
         _hudRenderer = hudRenderer;
         _commandHandler = commandHandler;
+        _frameSource = frameSource ?? new OpenCvFrameSource();
+        _displaySink = displaySink ?? new OpenCvDisplaySink();
+        _keyboardSource = keyboardSource ?? new OpenCvKeyboardEventSource();
     }
 
     /// <summary>
@@ -105,9 +115,8 @@ public class NexaEngine
     public void Run(int webcamIndex = 0)
     {
         Console.WriteLine($"Opening Camera (Index {webcamIndex})...");
-        using VideoCapture capture = new(webcamIndex, VideoCaptureAPIs.ANY);
 
-        if (!capture.IsOpened())
+        if (!_frameSource.Open(webcamIndex))
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"[ERROR] Could not open webcam (index {webcamIndex}). Please check your camera connection.");
@@ -115,12 +124,10 @@ public class NexaEngine
             return;
         }
 
-        capture.Set(VideoCaptureProperties.FrameWidth, 1280);
-        capture.Set(VideoCaptureProperties.FrameHeight, 720);
-        capture.Set(VideoCaptureProperties.Fps, 30);
+        _frameSource.Set(VideoCaptureProperties.FrameWidth, 1280);
+        _frameSource.Set(VideoCaptureProperties.FrameHeight, 720);
+        _frameSource.Set(VideoCaptureProperties.Fps, 30);
 
-        const string windowName = "NEXA - MediaPipe Hand Tracking [ONNX]";
-        using Window window = new(windowName, WindowFlags.AutoSize);
         using Mat frame = new();
 
         _commandHandler.PrintControls();
@@ -132,9 +139,36 @@ public class NexaEngine
 
         while (true)
         {
-            if (!capture.Read(frame) || frame.Empty())
+            if (!_frameSource.Read(frame) || frame.Empty())
             {
-                Cv2.WaitKey(10);
+                int idleKey = _keyboardSource.WaitKey(10);
+                if (idleKey != -1)
+                {
+                    bool continueRunning = _commandHandler.ProcessKey(
+                        idleKey,
+                        1280,
+                        720,
+                        _tracker,
+                        _handRenderer,
+                        _faceRenderer,
+                        _virtualObject,
+                        _mouseController,
+                        _scrollController,
+                        _windowGrabController,
+                        _twoHandController,
+                        _monitorThrowController,
+                        _volumeController,
+                        _lockController,
+                        _circleUndoController,
+                        _shhhMuteController,
+                        _hearNoEvilController,
+                        ref showHud);
+
+                    if (!continueRunning)
+                    {
+                        break;
+                    }
+                }
                 continue;
             }
 
@@ -204,10 +238,10 @@ public class NexaEngine
                     _hearNoEvilController);
             }
 
-            window.ShowImage(frame);
+            _displaySink.ShowImage(frame);
 
             // 5. Keyboard Handling
-            int key = Cv2.WaitKey(1);
+            int key = _keyboardSource.WaitKey(1);
             if (key != -1)
             {
                 bool continueRunning = _commandHandler.ProcessKey(

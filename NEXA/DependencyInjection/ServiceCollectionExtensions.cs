@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using NEXA.Abstractions;
+using NEXA.Adapters.Capture;
 using NEXA.Adapters.Output;
 using NEXA.Application;
 using NEXA.Domain.Click;
@@ -44,11 +45,17 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IInputSink, Win32InputSink>();
         services.AddSingleton<IAudioSink, Win32AudioSink>();
         services.AddSingleton<IScreenshotSink, Win32ScreenshotSink>();
+        services.AddSingleton<IFrameSource, OpenCvFrameSource>();
+        services.AddSingleton<IDisplaySink, OpenCvDisplaySink>();
+        services.AddSingleton<IKeyboardEventSource, OpenCvKeyboardEventSource>();
 
         // Concrete types for backward compatibility when injected explicitly
         services.AddSingleton(sp => (Win32InputSink)sp.GetRequiredService<IInputSink>());
         services.AddSingleton(sp => (Win32AudioSink)sp.GetRequiredService<IAudioSink>());
         services.AddSingleton(sp => (Win32ScreenshotSink)sp.GetRequiredService<IScreenshotSink>());
+        services.AddSingleton(sp => (OpenCvFrameSource)sp.GetRequiredService<IFrameSource>());
+        services.AddSingleton(sp => (OpenCvDisplaySink)sp.GetRequiredService<IDisplaySink>());
+        services.AddSingleton(sp => (OpenCvKeyboardEventSource)sp.GetRequiredService<IKeyboardEventSource>());
 
         // 2. Vision Models & Trackers
         services.AddSingleton<HandTracker>(sp => new HandTracker(palmModelPath, landmarkModelPath));
@@ -128,7 +135,10 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ShhhMuteController>(),
                 sp.GetRequiredService<HearNoEvilController>(),
                 sp.GetRequiredService<HudRenderer>(),
-                sp.GetRequiredService<KeyboardCommandHandler>()
+                sp.GetRequiredService<KeyboardCommandHandler>(),
+                sp.GetRequiredService<IFrameSource>(),
+                sp.GetRequiredService<IDisplaySink>(),
+                sp.GetRequiredService<IKeyboardEventSource>()
             );
         });
 

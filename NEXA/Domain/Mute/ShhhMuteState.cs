@@ -5,9 +5,9 @@ using OpenCvSharp;
 namespace NEXA.Domain.Mute;
 
 /// <summary>
-/// State container tracking the "Shhh" (🤫) mute gesture hold timers, proximity distances, and cooldown timestamps.
+/// State container tracking the "Shhh" mute gesture hold timers, proximity distances, and cooldown timestamps.
 /// <para>
-/// <b>What it is:</b> The state machine memory model for <see cref="ShhhMuteDetector"/>.
+/// <b>What it is:</b> State machine model for <see cref="ShhhMuteDetector"/>.
 /// </para>
 /// </summary>
 public class ShhhMuteState

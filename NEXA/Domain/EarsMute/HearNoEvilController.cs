@@ -9,7 +9,7 @@ using OpenCvSharp;
 namespace NEXA.Domain.EarsMute;
 
 /// <summary>
-/// Controller coordinating the "Hear No Evil" 🙉 hands-to-ears speaker audio mute gesture with OS audio sinks and AR visual feedback.
+/// Controller coordinating the "Hear No Evil" hands-to-ears speaker audio mute gesture with OS audio sinks and AR visual feedback.
 /// <para>
 /// <b>What it is:</b> Application service linking spatial face/hand ear-proximity detection to Windows master speaker sound muting.
 /// </para>

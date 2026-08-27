@@ -4,9 +4,9 @@ using OpenCvSharp;
 namespace NEXA.Domain.EarsMute;
 
 /// <summary>
-/// State tracking model for the "Hear No Evil" 🙉 hands-to-ears speaker audio mute gesture.
+/// State tracking model for the "Hear No Evil" hands-to-ears speaker audio mute gesture.
 /// <para>
-/// <b>What it is:</b> State machine holding proximity timers, hold progress, refractory cooldowns, and speaker mute state.
+/// <b>What it is:</b> State container tracking proximity hold durations, timestamps, and cooldown periods.
 /// </para>
 /// </summary>
 public class HearNoEvilState

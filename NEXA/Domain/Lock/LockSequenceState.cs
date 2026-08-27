@@ -5,11 +5,11 @@ using OpenCvSharp;
 namespace NEXA.Domain.Lock;
 
 /// <summary>
-/// State container tracking the multi-stage security sequence (🖐️ &rarr; ✊ &rarr; 🖐️ &rarr; ✊), inter-step transition stopwatches, and cooldown timestamps.
+/// State container tracking the multi-stage security sequence (Open -> Fist -> Open -> Fist), inter-step transition stopwatches, and cooldown timestamps.
 /// <para>
-/// <b>What it is:</b> The state machine memory model for <see cref="LockSequenceDetector"/>.
+/// <b>What it is:</b> State machine holding current milestone, transition timeout stopwatches, consecutive frame debounce counters, and cooldown tracking.
 /// </para>
-/// <para>
+/// </summary>
 /// <b>What it does:</b>
 /// <list type="bullet">
 /// <item><description>Maintains the active <see cref="CurrentStep"/> (1 through 4).</description></item>

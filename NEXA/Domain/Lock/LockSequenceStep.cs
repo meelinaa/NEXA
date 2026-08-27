@@ -14,22 +14,22 @@ public enum LockSequenceStep
     Idle = 0,
 
     /// <summary>
-    /// Step 1: Initial Open Palm posture (🖐️) confirmed.
+    /// Step 1: Initial Open Palm posture confirmed.
     /// </summary>
     OpenPalm1 = 1,
 
     /// <summary>
-    /// Step 2: First Fist posture (✊) confirmed within 800ms.
+    /// Step 2: First Fist posture confirmed within 800ms.
     /// </summary>
     Fist1 = 2,
 
     /// <summary>
-    /// Step 3: Second Open Palm posture (🖐️) confirmed within 800ms.
+    /// Step 3: Second Open Palm posture confirmed within 800ms.
     /// </summary>
     OpenPalm2 = 3,
 
     /// <summary>
-    /// Step 4: Final Fist posture (✊) confirmed within 800ms &rarr; triggers Win32 LockWorkstation.
+    /// Step 4: Final Fist posture confirmed within 800ms -> triggers Win32 LockWorkstation.
     /// </summary>
     Fist2 = 4
 }

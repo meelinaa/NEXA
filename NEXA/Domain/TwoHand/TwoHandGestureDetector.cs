@@ -82,7 +82,7 @@ public class TwoHandGestureDetector
         double palmSize2 = hand2.Distance(0, 9);
         double avgPalmSize = Math.Max(20.0, (palmSize1 + palmSize2) / 2.0);
 
-        // 1. Gesture: Clap / Prayer Play/Pause (👏 / 🤲)
+        // 1. Gesture: Clap / Prayer Play/Pause
         if (_clapDetector.Update(hand1, hand2, State, avgPalmSize))
         {
             ResetTouchState();

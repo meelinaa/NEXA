@@ -47,7 +47,7 @@ public class TrackedFace
     public Point2f RightEar { get; set; }
 
     /// <summary>
-    /// Proximity radius around each ear for the "Hear No Evil" 🙉 gesture.
+    /// Proximity radius around each ear for the "Hear No Evil" gesture.
     /// </summary>
     public float EarRadius { get; set; }
 

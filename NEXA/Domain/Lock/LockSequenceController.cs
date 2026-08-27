@@ -9,7 +9,7 @@ namespace NEXA.Domain.Lock;
 /// <summary>
 /// Application adapter orchestrating dual-hand multi-stage security gesture evaluation, Windows OS session locking, and augmented reality milestone HUD rendering.
 /// <para>
-/// <b>What it is:</b> The controller executing PC lock commands upon completion of the 🖐️🖐️ &rarr; ✊✊ &rarr; 🖐️🖐️ &rarr; ✊✊ sequence.
+/// <b>What it is:</b> The controller executing PC lock commands upon completion of the Open-Fist-Open-Fist sequence.
 /// </para>
 /// </summary>
 public class LockSequenceController

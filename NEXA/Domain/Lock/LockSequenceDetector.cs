@@ -6,7 +6,7 @@ using OpenCvSharp;
 namespace NEXA.Domain.Lock;
 
 /// <summary>
-/// Domain-level analyzer evaluating the dual-hand 4-stage intentional security sequence (🖐️🖐️ &rarr; ✊✊ &rarr; 🖐️🖐️ &rarr; ✊✊) to lock the Windows PC.
+/// Domain-level analyzer evaluating the dual-hand 4-stage intentional security sequence (Open -> Fist -> Open -> Fist) to lock the Windows PC.
 /// <para>
 /// <b>What it is:</b> A multi-state temporal posture state machine requiring both hands to guard the OS lock workstation function against accidental triggers.
 /// </para>
