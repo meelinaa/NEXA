@@ -1,6 +1,5 @@
 using System;
 using NEXA.Adapters.Output;
-using NEXA.Domain.Scroll;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -11,36 +10,16 @@ namespace NEXA.Domain.Scroll;
 /// <para>
 /// <b>What it is:</b> The orchestration controller for swipe-to-scroll functionality.
 /// </para>
-/// <para>
-/// <b>What it does:</b>
-/// <list type="bullet">
-/// <item><description>Delegates gesture tracking and physics momentum to the underlying <see cref="ScrollDetector"/>.</description></item>
-/// <item><description>Receives <see cref="ScrollDecision"/> outputs and dispatches physical mouse wheel clicks through <see cref="IInputSink.Scroll"/>.</description></item>
-/// <item><description>Renders dynamic on-screen floating arrow animations with real-time slope telemetry.</description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <b>Why it is used:</b> Connects the abstract domain detector to concrete platform inputs while keeping the main frame loop in <c>Program.cs</c> uncluttered.
-/// </para>
-/// <para>
-/// <b>Consequence:</b> Delivers smooth, visual, and responsive gesture-controlled scrolling.
-/// </para>
 /// </summary>
-/// <remarks>
-/// Initializes a new instance of the <see cref="ScrollController"/> class with an optional injected input sink.
-/// </remarks>
-/// <param name="inputSink">The output adapter to receive wheel deltas (defaults to <see cref="Win32InputSink"/> if null).</param>
-public class ScrollController(IInputSink? inputSink = null)
+public class ScrollController
 {
-    /// <summary>
-    /// The input sink used to send physical mouse wheel commands to Windows.
-    /// </summary>
-    private readonly IInputSink _inputSink = inputSink ?? new Win32InputSink();
+    private readonly IInputSink _inputSink;
+    private readonly ScrollFeedbackRenderer _renderer;
 
     /// <summary>
     /// The core domain detector handling swipe analysis and momentum physics.
     /// </summary>
-    public ScrollDetector Detector { get; } = new ScrollDetector();
+    public ScrollDetector Detector { get; }
 
     /// <summary>
     /// Gets or sets a value indicating whether scroll processing is enabled.
@@ -76,6 +55,22 @@ public class ScrollController(IInputSink? inputSink = null)
     }
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="ScrollController"/> class with an optional injected input sink.
+    /// </summary>
+    /// <param name="inputSink">The output adapter to receive wheel deltas (defaults to <see cref="Win32InputSink"/> if null).</param>
+    /// <param name="detector">Optional custom scroll detector.</param>
+    /// <param name="renderer">Optional custom feedback renderer.</param>
+    public ScrollController(
+        IInputSink? inputSink = null,
+        ScrollDetector? detector = null,
+        ScrollFeedbackRenderer? renderer = null)
+    {
+        _inputSink = inputSink ?? new Win32InputSink();
+        Detector = detector ?? new ScrollDetector();
+        _renderer = renderer ?? new ScrollFeedbackRenderer();
+    }
+
+    /// <summary>
     /// Processes ongoing momentum inertia coasting each frame and dispatches resulting wheel movements to the OS.
     /// </summary>
     public void UpdateMomentum()
@@ -106,28 +101,6 @@ public class ScrollController(IInputSink? inputSink = null)
     /// <param name="frame">The camera image frame to draw on.</param>
     public void RenderFeedback(Mat frame)
     {
-        double elapsed = (DateTime.Now - Detector.LastFeedbackTime).TotalMilliseconds;
-        if (elapsed < 550)
-        {
-            float progress = (float)(elapsed / 550.0);
-
-            int x = (int)Detector.LastSwipePoint.X;
-            int y = (int)Detector.LastSwipePoint.Y;
-
-            bool isUp = Detector.LastSwipeDirection == "UP";
-            Scalar color = Detector.LastInitialVelocity >= 100
-                ? new Scalar(0, 100, 255)  // High velocity: Orange/Red
-                : new Scalar(0, 240, 255); // Normal velocity: Cyan/Yellow
-
-            int offset = (int)(progress * 40);
-            int drawY = isUp ? y - offset : y + offset;
-
-            string arrowText = isUp
-                ? $"^ SCROLL UP (Slope: {Detector.State.LastSlope:+0.00;-0.00;0.00})"
-                : $"v SCROLL DOWN (Slope: {Detector.State.LastSlope:+0.00;-0.00;0.00})";
-
-            Cv2.PutText(frame, arrowText, new Point(Math.Max(10, x - 85), Math.Max(30, drawY)),
-                HersheyFonts.HersheySimplex, 0.52, color, 2, LineTypes.AntiAlias);
-        }
+        _renderer.Render(frame, Detector);
     }
 }

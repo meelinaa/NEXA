@@ -8,46 +8,20 @@ using OpenCvSharp;
 namespace NEXA.Domain.Grab;
 
 /// <summary>
-/// Application adapter orchestrating real OS window grabbing, delta relocation, Snap-to-Side docking, and camera viewport feedback rendering.
+/// Application controller orchestrating real OS window grabbing, delta relocation, Snap-to-Side docking, and camera viewport feedback rendering.
 /// <para>
 /// <b>What it is:</b> The controller responsible for moving, resizing, and docking physical Windows desktop applications via hand gestures.
-/// </para>
-/// <para>
-/// <b>What it does:</b>
-/// <list type="bullet">
-/// <item><description>Initializes <see cref="WindowGrabDetector"/> and <see cref="WindowResizeDetector"/> with monitor resolution from <see cref="IInputSink"/>.</description></item>
-/// <item><description>Brings the grabbed window to the foreground via <see cref="IInputSink.BringWindowToForeground"/> upon latching.</description></item>
-/// <item><description>Applies <see cref="IInputSink.SetWindowRect"/> for edge snapping and un-snapping, and <see cref="IInputSink.MoveWindow"/> for standard free dragging.</description></item>
-/// <item><description>Raises <see cref="OnFistReleased"/> when a grabbed window is released to trigger downstream action windows.</description></item>
-/// <item><description>Renders holographic docking zones, back-projected corner brackets, and AR pinch calipers directly on the camera viewport.</description></item>
-/// </list>
 /// </para>
 /// </summary>
 public class WindowGrabController
 {
-    /// <summary>
-    /// The input sink used to query, move, and resize physical OS windows.
-    /// </summary>
     private readonly IInputSink _inputSink;
-
-    /// <summary>
-    /// Desktop primary monitor horizontal resolution in pixels.
-    /// </summary>
     private readonly int _screenWidth;
-
-    /// <summary>
-    /// Desktop primary monitor vertical resolution in pixels.
-    /// </summary>
     private readonly int _screenHeight;
+    private readonly WindowResizeCoordinator _resizeCoordinator;
+    private readonly WindowGrabRenderer _renderer;
 
-    /// <summary>
-    /// Track the HWND that was activated to ensure BringWindowToForeground is called once per grab cycle.
-    /// </summary>
     private IntPtr _lastForegroundHwnd = IntPtr.Zero;
-
-    /// <summary>
-    /// Flag tracking whether the grab was active in the previous frame to detect release transitions.
-    /// </summary>
     private bool _wasGrabbedLastFrame = false;
 
     /// <summary>
@@ -63,7 +37,7 @@ public class WindowGrabController
     /// <summary>
     /// The secondary domain detector handling continuous two-hand pinch aperture scaling.
     /// </summary>
-    public WindowResizeDetector ResizeDetector { get; } = new();
+    public WindowResizeDetector ResizeDetector => _resizeCoordinator.Detector;
 
     /// <summary>
     /// Gets or sets a value indicating whether window grabbing and resizing are enabled.
@@ -82,17 +56,26 @@ public class WindowGrabController
     /// <summary>
     /// Gets the internal window resize state machine.
     /// </summary>
-    public WindowResizeState ResizeState => ResizeDetector.State;
+    public WindowResizeState ResizeState => _resizeCoordinator.State;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="WindowGrabController"/> class, querying display resolution from the input sink.
+    /// Initializes a new instance of the <see cref="WindowGrabController"/> class.
     /// </summary>
     /// <param name="inputSink">The output adapter for OS inputs (defaults to <see cref="Win32InputSink"/> if null).</param>
-    public WindowGrabController(IInputSink? inputSink = null)
+    /// <param name="detector">Optional custom detector instance.</param>
+    /// <param name="resizeCoordinator">Optional custom resize coordinator.</param>
+    /// <param name="renderer">Optional custom renderer instance.</param>
+    public WindowGrabController(
+        IInputSink? inputSink = null,
+        WindowGrabDetector? detector = null,
+        WindowResizeCoordinator? resizeCoordinator = null,
+        WindowGrabRenderer? renderer = null)
     {
         _inputSink = inputSink ?? new Win32InputSink();
         (_screenWidth, _screenHeight) = _inputSink.GetScreenResolution();
-        Detector = new WindowGrabDetector(_screenWidth, _screenHeight);
+        Detector = detector ?? new WindowGrabDetector(_screenWidth, _screenHeight);
+        _resizeCoordinator = resizeCoordinator ?? new WindowResizeCoordinator(_screenWidth, _screenHeight);
+        _renderer = renderer ?? new WindowGrabRenderer();
     }
 
     /// <summary>
@@ -119,14 +102,12 @@ public class WindowGrabController
         {
             if (State.IsGrabbed)
             {
-                // Find hand closest to last tracked palm center as the primary dragging hand
                 primaryHand = hands.OrderBy(h => Math.Pow(h.SmoothedLandmarks2D[9].X - State.LastPalmCenter.X, 2) +
                                                  Math.Pow(h.SmoothedLandmarks2D[9].Y - State.LastPalmCenter.Y, 2)).FirstOrDefault();
                 secondaryHand = hands.FirstOrDefault(h => h != primaryHand);
             }
             else
             {
-                // Prefer hand making a Fist, otherwise first hand
                 primaryHand = hands.FirstOrDefault(h => h.Gesture == "Fist") ?? hands[0];
                 secondaryHand = hands.FirstOrDefault(h => h != primaryHand);
             }
@@ -136,7 +117,6 @@ public class WindowGrabController
 
         if (isGrabbed && hwnd != IntPtr.Zero)
         {
-            // Bring window to foreground and record focus once at grab start
             if (_lastForegroundHwnd != hwnd)
             {
                 _inputSink.BringWindowToForeground(hwnd);
@@ -145,49 +125,8 @@ public class WindowGrabController
                 _inputSink.LastFocusedTitle = State.CachedWindowTitle;
             }
 
-            // 1. Process secondary hand pinch-zoom resizing first (when not docked in snap mode)
-            if (!State.IsSnapped && secondaryHand != null)
-            {
-                int baseW = State.InitialWindowBounds.Width > 0 ? State.InitialWindowBounds.Width : _screenWidth / 2;
-                int baseH = State.InitialWindowBounds.Height > 0 ? State.InitialWindowBounds.Height : _screenHeight / 2;
-
-                (bool shouldResize, int newWidth, int newHeight) = ResizeDetector.Update(
-                    secondaryHand,
-                    baseW,
-                    baseH,
-                    _screenWidth,
-                    _screenHeight);
-
-                if (shouldResize && newWidth > 0 && newHeight > 0)
-                {
-                    // Compute current center point of the window
-                    double centerX = targetX + baseW / 2.0;
-                    double centerY = targetY + baseH / 2.0;
-
-                    // Calculate center-anchored top-left coordinates for new dimensions
-                    double newTargetX = centerX - newWidth / 2.0;
-                    double newTargetY = centerY - newHeight / 2.0;
-
-                    // Screen boundary clamping: push inward so window never expands beyond monitor borders
-                    int maxBoundX = Math.Max(0, _screenWidth - newWidth);
-                    int maxBoundY = Math.Max(0, _screenHeight - newHeight);
-
-                    int clampedX = Math.Clamp((int)Math.Round(newTargetX), 0, maxBoundX);
-                    int clampedY = Math.Clamp((int)Math.Round(newTargetY), 0, maxBoundY);
-
-                    targetX = clampedX;
-                    targetY = clampedY;
-
-                    State.InitialWindowBounds = new Rect(clampedX, clampedY, newWidth, newHeight);
-                    State.PreSnapBounds = new Rect(clampedX, clampedY, newWidth, newHeight);
-                    State.CurrentTargetX = clampedX;
-                    State.CurrentTargetY = clampedY;
-                }
-            }
-            else
-            {
-                ResizeDetector.Reset();
-            }
+            // 1. Process secondary hand pinch-zoom resizing
+            _resizeCoordinator.ProcessResize(State, secondaryHand, ref targetX, ref targetY);
 
             // 2. Dispatch window position and dimensions to the operating system
             if (State.IsSnapped)
@@ -206,7 +145,7 @@ public class WindowGrabController
         }
         else
         {
-            ResizeDetector.Reset();
+            _resizeCoordinator.Reset();
 
             if (_wasGrabbedLastFrame)
             {
@@ -223,138 +162,6 @@ public class WindowGrabController
     /// <param name="frame">The camera image frame to draw on.</param>
     public void RenderFeedback(Mat frame)
     {
-        // 1. Holding Countdown Ring around Palm Center (before grab activates)
-        if (!State.IsGrabbed && State.HoldDurationSeconds > 0.1)
-        {
-            double progress = Math.Clamp(State.HoldDurationSeconds / State.RequiredHoldSeconds, 0.0, 1.0);
-            int radius = 32;
-            int angle = (int)(progress * 360);
-
-            Point pt = new((int)Math.Round(State.LastPalmCenter.X), (int)Math.Round(State.LastPalmCenter.Y));
-
-            Cv2.Circle(frame, pt, radius, new Scalar(40, 40, 55), 2, LineTypes.AntiAlias);
-            Cv2.Ellipse(frame, pt, new Size(radius, radius), -90, 0, angle, new Scalar(0, 165, 255), 3, LineTypes.AntiAlias);
-
-            double remaining = Math.Max(0, State.RequiredHoldSeconds - State.HoldDurationSeconds);
-            string holdText = $"HOLD {remaining:F1}s";
-            Cv2.PutText(frame, holdText, new Point(pt.X + 38, pt.Y + 5),
-                HersheyFonts.HersheySimplex, 0.42, new Scalar(0, 165, 255), 1, LineTypes.AntiAlias);
-        }
-
-        // 2. Grabbed Window Corner-Bracket / Snap Dock Overlay
-        if (State.IsGrabbed && State.InitialWindowBounds.Width > 0 && State.InitialWindowBounds.Height > 0)
-        {
-            int currentWinW = State.IsSnapped
-                ? State.SnapBounds.Width
-                : (ResizeState.IsActive && ResizeState.CurrentWidth > 0 ? ResizeState.CurrentWidth : State.InitialWindowBounds.Width);
-
-            int currentWinH = State.IsSnapped
-                ? State.SnapBounds.Height
-                : (ResizeState.IsActive && ResizeState.CurrentHeight > 0 ? ResizeState.CurrentHeight : State.InitialWindowBounds.Height);
-
-            int currentWinX = State.IsSnapped ? State.SnapBounds.X : State.CurrentTargetX;
-            int currentWinY = State.IsSnapped ? State.SnapBounds.Y : State.CurrentTargetY;
-
-            // Project Top-Left and Bottom-Right desktop bounds back to camera pixel coordinates
-            (float camLeft, float camTop) = Detector.MapFromScreen(currentWinX, currentWinY, frame.Width, frame.Height);
-            (float camRight, float camBottom) = Detector.MapFromScreen(
-                currentWinX + currentWinW,
-                currentWinY + currentWinH,
-                frame.Width, frame.Height);
-
-            int x = (int)Math.Round(camLeft);
-            int y = (int)Math.Round(camTop);
-            int w = (int)Math.Round(camRight - camLeft);
-            int h = (int)Math.Round(camBottom - camTop);
-
-            Rect boxRect = new(
-                Math.Clamp(x, 2, frame.Width - 10),
-                Math.Clamp(y, 2, frame.Height - 10),
-                Math.Clamp(w, 20, frame.Width - 4),
-                Math.Clamp(h, 20, frame.Height - 4)
-            );
-
-            Scalar themeColor = State.IsSnapped
-                ? new Scalar(255, 160, 0) // Vibrant Azure Blue
-                : (ResizeState.IsActive ? new Scalar(0, 220, 255) : new Scalar(0, 100, 255));
-
-            // Translucent backdrop
-            using (Mat overlay = frame.Clone())
-            {
-                Cv2.Rectangle(overlay, boxRect, new Scalar(15, 15, 25), -1);
-                Cv2.AddWeighted(overlay, State.IsSnapped ? 0.45 : 0.35, frame, State.IsSnapped ? 0.55 : 0.65, 0, frame);
-            }
-
-            // Outer rectangle & corner brackets
-            Cv2.Rectangle(frame, boxRect, themeColor, State.IsSnapped ? 2 : 1, LineTypes.AntiAlias);
-            int cornerLen = Math.Min(25, Math.Min(boxRect.Width / 4, boxRect.Height / 4));
-
-            if (cornerLen > 4)
-            {
-                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Top), new Point(boxRect.Left + cornerLen, boxRect.Top), themeColor, 2);
-                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Top), new Point(boxRect.Left + cornerLen, boxRect.Top), themeColor, 2);
-
-                Cv2.Line(frame, new Point(boxRect.Right, boxRect.Top), new Point(boxRect.Right - cornerLen, boxRect.Top), themeColor, 2);
-                Cv2.Line(frame, new Point(boxRect.Right, boxRect.Top), new Point(boxRect.Right, boxRect.Top + cornerLen), themeColor, 2);
-
-                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Bottom), new Point(boxRect.Left + cornerLen, boxRect.Bottom), themeColor, 2);
-                Cv2.Line(frame, new Point(boxRect.Left, boxRect.Bottom), new Point(boxRect.Left + cornerLen, boxRect.Bottom), themeColor, 2);
-
-                Cv2.Line(frame, new Point(boxRect.Right, boxRect.Bottom), new Point(boxRect.Right - cornerLen, boxRect.Bottom), themeColor, 2);
-                Cv2.Line(frame, new Point(boxRect.Right, boxRect.Bottom), new Point(boxRect.Right, boxRect.Bottom + cornerLen), themeColor, 2);
-            }
-
-            // Window metadata header badge
-            string rawTitle = NEXA.Common.TextSanitizer.ToSafeAscii(State.CachedWindowTitle);
-            string titleDisplay = rawTitle.Length > 18
-                ? rawTitle.Substring(0, 15) + "..."
-                : rawTitle;
-
-            string tagText;
-            if (State.IsSnapped)
-            {
-                string snapName = State.ActiveSnap switch
-                {
-                    WindowSnapType.LeftHalf => "SNAP LEFT (50%)",
-                    WindowSnapType.RightHalf => "SNAP RIGHT (50%)",
-                    WindowSnapType.TopHalf => "SNAP TOP (50%)",
-                    WindowSnapType.BottomHalf => "SNAP BOTTOM (50%)",
-                    WindowSnapType.TopLeftCorner => "SNAP TOP-LEFT (25%)",
-                    WindowSnapType.TopRightCorner => "SNAP TOP-RIGHT (25%)",
-                    WindowSnapType.BottomLeftCorner => "SNAP BOTTOM-LEFT (25%)",
-                    WindowSnapType.BottomRightCorner => "SNAP BOTTOM-RIGHT (25%)",
-                    _ => "DOCKED"
-                };
-                tagText = $"[{snapName}] [{titleDisplay}]";
-            }
-            else if (ResizeState.IsActive)
-            {
-                tagText = $"RESIZING: [{titleDisplay}] {currentWinW}x{currentWinH} ({ResizeState.CurrentScale:F2}x)";
-            }
-            else
-            {
-                tagText = $"GRABBED: [{titleDisplay}] ({(int)State.CurrentTargetX}, {(int)State.CurrentTargetY})";
-            }
-
-            Cv2.PutText(frame, NEXA.Common.TextSanitizer.ToSafeAscii(tagText), new Point(Math.Max(10, boxRect.Left + 8), Math.Max(25, boxRect.Top + 20)),
-                HersheyFonts.HersheySimplex, 0.44, new Scalar(255, 255, 255), 1, LineTypes.AntiAlias);
-        }
-
-        // 3. Pinch-to-Scale Measurement Caliper on Resizing Hand
-        if (!State.IsSnapped && ResizeState.IsActive)
-        {
-            Point pThumb = new((int)ResizeState.ThumbTip.X, (int)ResizeState.ThumbTip.Y);
-            Point pIndex = new((int)ResizeState.IndexTip.X, (int)ResizeState.IndexTip.Y);
-
-            // Glowing caliper line between thumb and index
-            Cv2.Line(frame, pThumb, pIndex, new Scalar(0, 220, 255), 2, LineTypes.AntiAlias);
-            Cv2.Circle(frame, pThumb, 6, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
-            Cv2.Circle(frame, pIndex, 6, new Scalar(0, 255, 120), -1, LineTypes.AntiAlias);
-
-            Point midPt = new((pThumb.X + pIndex.X) / 2, (pThumb.Y + pIndex.Y) / 2);
-            string scaleLabel = $"SCALE: {ResizeState.CurrentScale:F2}x";
-            Cv2.PutText(frame, scaleLabel, new Point(midPt.X + 12, midPt.Y),
-                HersheyFonts.HersheySimplex, 0.44, new Scalar(0, 220, 255), 1, LineTypes.AntiAlias);
-        }
+        _renderer.Render(frame, State, ResizeState, Detector);
     }
 }
