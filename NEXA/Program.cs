@@ -619,6 +619,7 @@ while (true)
     }
     else if (key == 'f' || key == 'F')
     {
+        faceMeshRenderer.ShowFaceOverlay = !faceMeshRenderer.ShowFaceOverlay;
         faceMeshRenderer.ShowMeshWidget = !faceMeshRenderer.ShowMeshWidget;
         faceMeshRenderer.ShowHeadBoundingBox = !faceMeshRenderer.ShowHeadBoundingBox;
     }

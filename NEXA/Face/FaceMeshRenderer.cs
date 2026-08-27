@@ -1,13 +1,12 @@
 using System;
-using NEXA.Common;
 using OpenCvSharp;
 
 namespace NEXA.Face;
 
 /// <summary>
-/// Visualizer rendering a clean head bounding box around the detected face and an isolated 468-point MediaPipe FaceMesh telemetry card in the bottom-left corner of the HUD.
+/// Visualizer rendering the full 468-point MediaPipe FaceMesh directly onto the tracked face in the camera frame.
 /// <para>
-/// <b>What it is:</b> The visual telemetry renderer for 468-point FaceMesh inspection.
+/// <b>What it is:</b> Augmented reality renderer for real-time 468-point face mesh telemetry overlaid on the user's face.
 /// </para>
 /// </summary>
 public class FaceMeshRenderer
@@ -15,12 +14,17 @@ public class FaceMeshRenderer
     /// <summary>
     /// Gets or sets a value indicating whether to show the face bounding box around the head.
     /// </summary>
-    public bool ShowHeadBoundingBox { get; set; } = true;
+    public bool ShowHeadBoundingBox { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to render the 468-point mesh directly on the face in the camera view.
+    /// </summary>
+    public bool ShowFaceOverlay { get; set; } = true;
 
     /// <summary>
     /// Gets or sets a value indicating whether to show the bottom-left face mesh PIP widget.
     /// </summary>
-    public bool ShowMeshWidget { get; set; } = true;
+    public bool ShowMeshWidget { get; set; } = false;
 
     private static readonly int[] FaceOval = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
     private static readonly int[] RightEyebrow = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
@@ -32,7 +36,7 @@ public class FaceMeshRenderer
     private static readonly int[] InnerLips = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
 
     /// <summary>
-    /// Renders the clean head bounding box on the camera view and the 468-point face mesh telemetry in a dedicated bottom-left box.
+    /// Renders the face mesh contours, landmark dots, and head bounding box onto the camera frame.
     /// </summary>
     /// <param name="frame">The camera image frame to draw on.</param>
     /// <param name="face">The detected face instance.</param>
@@ -41,7 +45,36 @@ public class FaceMeshRenderer
         if (face == null || frame == null || frame.Empty())
             return;
 
-        // 1. Render Clean Bounding Box Around the Head
+        Scalar meshColor = new(0, 220, 255); // Vibrant Cyan
+        Scalar pointColor = new(0, 255, 120); // Neon Lime Green
+        Scalar lipColor = new(0, 100, 255); // Orange/Red for Lips
+
+        // 1. Render Face Mesh directly on the Tracked Face in the Camera View
+        if (ShowFaceOverlay && face.Landmarks != null && face.Landmarks.Length >= 468)
+        {
+            // Draw Facial Contour PolyLines directly on face
+            DrawIndexLoop(frame, face.Landmarks, FaceOval, true, meshColor);
+            DrawIndexLoop(frame, face.Landmarks, RightEyebrow, false, meshColor);
+            DrawIndexLoop(frame, face.Landmarks, LeftEyebrow, false, meshColor);
+            DrawIndexLoop(frame, face.Landmarks, NoseBridge, false, meshColor);
+            DrawIndexLoop(frame, face.Landmarks, RightEye, true, meshColor);
+            DrawIndexLoop(frame, face.Landmarks, LeftEye, true, meshColor);
+            DrawIndexLoop(frame, face.Landmarks, OuterLips, true, lipColor);
+            DrawIndexLoop(frame, face.Landmarks, InnerLips, true, lipColor);
+
+            // Draw Landmark Dots on face
+            for (int i = 0; i < 468; i++)
+            {
+                Point pt = new((int)Math.Round(face.Landmarks[i].X), (int)Math.Round(face.Landmarks[i].Y));
+                if (pt.X > 0 && pt.Y > 0 && pt.X < frame.Width && pt.Y < frame.Height)
+                {
+                    Scalar dotColor = (i is 0 or 13 or 14 or 17 or 61 or 291) ? lipColor : pointColor;
+                    Cv2.Circle(frame, pt, 1, dotColor, -1, LineTypes.AntiAlias);
+                }
+            }
+        }
+
+        // 2. Optional: Render Clean Bounding Box Around the Head (if enabled)
         if (ShowHeadBoundingBox)
         {
             Rect headRect = new(
@@ -53,26 +86,9 @@ public class FaceMeshRenderer
 
             Scalar headColor = new(0, 220, 255); // Cyan
             Cv2.Rectangle(frame, headRect, headColor, 1, LineTypes.AntiAlias);
-
-            int cornerLen = Math.Min(20, (int)(headRect.Width * 0.15));
-            // Top-Left corner bracket
-            Cv2.Line(frame, new Point(headRect.X, headRect.Y), new Point(headRect.X + cornerLen, headRect.Y), headColor, 2, LineTypes.AntiAlias);
-            Cv2.Line(frame, new Point(headRect.X, headRect.Y), new Point(headRect.X, headRect.Y + cornerLen), headColor, 2, LineTypes.AntiAlias);
-            // Top-Right corner bracket
-            Cv2.Line(frame, new Point(headRect.Right, headRect.Y), new Point(headRect.Right - cornerLen, headRect.Y), headColor, 2, LineTypes.AntiAlias);
-            Cv2.Line(frame, new Point(headRect.Right, headRect.Y), new Point(headRect.Right, headRect.Y + cornerLen), headColor, 2, LineTypes.AntiAlias);
-            // Bottom-Left corner bracket
-            Cv2.Line(frame, new Point(headRect.X, headRect.Bottom), new Point(headRect.X + cornerLen, headRect.Bottom), headColor, 2, LineTypes.AntiAlias);
-            Cv2.Line(frame, new Point(headRect.X, headRect.Bottom), new Point(headRect.X, headRect.Bottom - cornerLen), headColor, 2, LineTypes.AntiAlias);
-            // Bottom-Right corner bracket
-            Cv2.Line(frame, new Point(headRect.Right, headRect.Bottom), new Point(headRect.Right - cornerLen, headRect.Bottom), headColor, 2, LineTypes.AntiAlias);
-            Cv2.Line(frame, new Point(headRect.Right, headRect.Bottom), new Point(headRect.Right, headRect.Bottom - cornerLen), headColor, 2, LineTypes.AntiAlias);
-
-            Cv2.PutText(frame, TextSanitizer.ToSafeAscii("[FACE ONNX 468]"), new Point(headRect.X, Math.Max(20, headRect.Y - 6)),
-                HersheyFonts.HersheySimplex, 0.40, headColor, 1, LineTypes.AntiAlias);
         }
 
-        // 2. Render Isolated 468-Point Face Mesh in Bottom-Left PIP Box
+        // 3. Optional: Render Isolated 468-Point Face Mesh in Bottom-Left PIP Box (if enabled)
         if (ShowMeshWidget && face.Landmarks != null && face.Landmarks.Length >= 468)
         {
             int pipW = 150;
@@ -81,17 +97,11 @@ public class FaceMeshRenderer
             int pipY = frame.Height - pipH - 10;
             Rect pipRect = new(pipX, pipY, pipW, pipH);
 
-            // Semi-transparent background card
             using Mat overlay = frame.Clone();
             Cv2.Rectangle(overlay, pipRect, new Scalar(10, 12, 18), -1);
             Cv2.AddWeighted(overlay, 0.75, frame, 0.25, 0, frame);
             Cv2.Rectangle(frame, pipRect, new Scalar(0, 220, 255), 1, LineTypes.AntiAlias);
 
-            // Title tag
-            Cv2.PutText(frame, TextSanitizer.ToSafeAscii("FACE MESH 468"), new Point(pipX + 22, pipY + 16),
-                HersheyFonts.HersheySimplex, 0.36, new Scalar(0, 255, 255), 1, LineTypes.AntiAlias);
-
-            // Find min/max bounds of raw landmarks to normalize them inside the PIP card
             float minX = float.MaxValue;
             float maxX = float.MinValue;
             float minY = float.MaxValue;
@@ -109,7 +119,6 @@ public class FaceMeshRenderer
             float rangeX = Math.Max(1f, maxX - minX);
             float rangeY = Math.Max(1f, maxY - minY);
 
-            // Target dimensions inside PIP
             float targetW = pipW - 24;
             float targetH = pipH - 34;
             float scale = Math.Min(targetW / rangeX, targetH / rangeY);
@@ -126,11 +135,6 @@ public class FaceMeshRenderer
                 );
             }
 
-            Scalar meshColor = new(0, 220, 255); // Cyan
-            Scalar pointColor = new(0, 255, 120); // Green
-            Scalar lipColor = new(0, 100, 255); // Orange
-
-            // Draw Contour PolyLines in PIP
             DrawIndexLoop(frame, pipPts, FaceOval, true, meshColor);
             DrawIndexLoop(frame, pipPts, RightEyebrow, false, meshColor);
             DrawIndexLoop(frame, pipPts, LeftEyebrow, false, meshColor);
@@ -139,14 +143,6 @@ public class FaceMeshRenderer
             DrawIndexLoop(frame, pipPts, LeftEye, true, meshColor);
             DrawIndexLoop(frame, pipPts, OuterLips, true, lipColor);
             DrawIndexLoop(frame, pipPts, InnerLips, true, lipColor);
-
-            // Draw Dots in PIP
-            for (int i = 0; i < 468; i++)
-            {
-                Point pt = new((int)Math.Round(pipPts[i].X), (int)Math.Round(pipPts[i].Y));
-                Scalar dotColor = (i is 0 or 13 or 14 or 17 or 61 or 291) ? lipColor : pointColor;
-                Cv2.Circle(frame, pt, 1, dotColor, -1, LineTypes.AntiAlias);
-            }
         }
     }
 
