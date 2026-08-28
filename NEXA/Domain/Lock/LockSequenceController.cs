@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -12,7 +13,7 @@ namespace NEXA.Domain.Lock;
 /// <b>What it is:</b> The controller executing PC lock commands upon completion of the Open-Fist-Open-Fist sequence.
 /// </para>
 /// </summary>
-public class LockSequenceController
+public class LockSequenceController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly LockSequenceRenderer _renderer;
@@ -65,6 +66,12 @@ public class LockSequenceController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.TrackedHands);
+    }
+
     /// <summary>
     /// Renders visual sequence milestones and countdown progress bars onto the camera frame.
     /// </summary>
@@ -74,4 +81,33 @@ public class LockSequenceController
     {
         _renderer.Render(frame, hands, State);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.TrackedHands);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string lockStatus;
+        if (!Enabled)
+            lockStatus = "AUS (Taste L)";
+        else if (State.CurrentStep != LockSequenceStep.Idle)
+            lockStatus = $"Sequenz: {(int)State.CurrentStep}/4 ({State.StepTimeoutSeconds - State.StepTimer.Elapsed.TotalSeconds:F1}s)";
+        else
+            lockStatus = "Bereit (Offen-Faust-Offen-Faust)";
+
+        return TextSanitizer.ToSafeAscii($"Sperren (L): {lockStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if (State.CurrentStep != LockSequenceStep.Idle) return new Scalar(0, 220, 255);
+        return new Scalar(0, 255, 120);
+    }
 }
+

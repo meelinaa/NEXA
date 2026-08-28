@@ -15,32 +15,32 @@ public class CircleUndoState
     /// <summary>
     /// Initial baseline angle in degrees when the Peace gesture was first formed.
     /// </summary>
-    public double? InitialAngleDeg { get; set; } = null;
+    public double? InitialAngleDeg { get; internal set; } = null;
 
     /// <summary>
     /// Current instantaneous orientation angle in degrees.
     /// </summary>
-    public double CurrentAngleDeg { get; set; } = 0.0;
+    public double CurrentAngleDeg { get; internal set; } = 0.0;
 
     /// <summary>
     /// Current signed angular delta from the initial baseline in degrees (negative = left/CCW, positive = right/CW).
     /// </summary>
-    public double AngleDeltaDeg { get; set; } = 0.0;
+    public double AngleDeltaDeg { get; internal set; } = 0.0;
 
     /// <summary>
     /// Wrist position (Landmark 0) in 2D camera coordinates.
     /// </summary>
-    public Point2f WristPos { get; set; }
+    public Point2f WristPos { get; internal set; }
 
     /// <summary>
     /// Midpoint between Index tip (8) and Middle tip (12) in 2D camera coordinates.
     /// </summary>
-    public Point2f FingerTipsPos { get; set; }
+    public Point2f FingerTipsPos { get; internal set; }
 
     /// <summary>
     /// Indicates whether the Peace gesture is actively held.
     /// </summary>
-    public bool IsTracking { get; set; } = false;
+    public bool IsTracking { get; internal set; } = false;
 
     /// <summary>
     /// Stopwatch tracking how long the current twist session has been active (3.0s window).
@@ -60,17 +60,17 @@ public class CircleUndoState
     /// <summary>
     /// Action label ("UNDO" or "REDO") of the most recently dispatched action.
     /// </summary>
-    public string LastAction { get; set; } = string.Empty;
+    public string LastAction { get; internal set; } = string.Empty;
 
     /// <summary>
     /// Timestamp of the last executed action for AR feedback animation.
     /// </summary>
-    public DateTime LastActionTime { get; set; } = DateTime.MinValue;
+    public DateTime LastActionTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// 2D coordinate where the action was executed.
     /// </summary>
-    public Point2f LastActionCenter { get; set; }
+    public Point2f LastActionCenter { get; internal set; }
 
     /// <summary>
     /// Resets active tracking state back to baseline.

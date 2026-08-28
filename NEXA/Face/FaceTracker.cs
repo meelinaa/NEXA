@@ -71,6 +71,8 @@ public class FaceTracker : IDisposable
         return string.Empty;
     }
 
+    private readonly TrackedFace _trackedFace = new();
+
     /// <summary>
     /// Analyzes the camera frame to detect human faces and regress all 468 landmark tracking points.
     /// </summary>
@@ -98,11 +100,10 @@ public class FaceTracker : IDisposable
         if (rawLandmarks == null || rawLandmarks.Length < 468)
             return null;
 
-        // 3. Apply Isotropic 2D OneEuroFilter smoothing to all 468 landmark points
-        Point2f[] smoothedLandmarks = new Point2f[468];
+        // 3. Apply Isotropic 2D OneEuroFilter smoothing in-place to all 468 landmark points
         for (int i = 0; i < 468; i++)
         {
-            smoothedLandmarks[i] = _landmarkFilters[i].Filter(rawLandmarks[i], timestamp);
+            _trackedFace.Landmarks[i] = _landmarkFilters[i].Filter(rawLandmarks[i], timestamp);
         }
 
         // 4. Smooth the Head Bounding Box
@@ -113,39 +114,46 @@ public class FaceTracker : IDisposable
 
         // 5. Derive Anatomical Keypoints from 468-point MediaPipe Index Standard
         // Top Lip: 0, Bottom Lip: 17
-        Point2f topLip = smoothedLandmarks[0];
-        Point2f bottomLip = smoothedLandmarks[17];
+        Point2f topLip = _trackedFace.Landmarks[0];
+        Point2f bottomLip = _trackedFace.Landmarks[17];
         Point2f mouthCenter = new((topLip.X + bottomLip.X) / 2.0f, (topLip.Y + bottomLip.Y) / 2.0f);
 
         // Mouth Corners: Right: 61, Left: 291
-        Point2f rightCorner = smoothedLandmarks[61];
-        Point2f leftCorner = smoothedLandmarks[291];
+        Point2f rightCorner = _trackedFace.Landmarks[61];
+        Point2f leftCorner = _trackedFace.Landmarks[291];
         double mouthWidth = Math.Sqrt(Math.Pow(leftCorner.X - rightCorner.X, 2) + Math.Pow(leftCorner.Y - rightCorner.Y, 2));
         float mouthRadius = (float)Math.Max(35.0, mouthWidth * 0.70);
 
-        Point2f leftEye = smoothedLandmarks[386];  // Left pupil / eye center
-        Point2f rightEye = smoothedLandmarks[159]; // Right pupil / eye center
-        Point2f noseTip = smoothedLandmarks[1];    // Nose tip
+        Point2f leftEye = _trackedFace.Landmarks[386];  // Left pupil / eye center
+        Point2f rightEye = _trackedFace.Landmarks[159]; // Right pupil / eye center
+        Point2f noseTip = _trackedFace.Landmarks[1];    // Nose tip
 
-        Point2f leftEar = smoothedLandmarks[454];   // Left ear tragion / head side
-        Point2f rightEar = smoothedLandmarks[234];  // Right ear tragion / head side
+        Point2f leftEar = _trackedFace.Landmarks[454];   // Left ear tragion / head side
+        Point2f rightEar = _trackedFace.Landmarks[234];  // Right ear tragion / head side
         double earDist = Math.Sqrt(Math.Pow(leftEar.X - rightEar.X, 2) + Math.Pow(leftEar.Y - rightEar.Y, 2));
         float earRadius = (float)Math.Max(50.0, earDist * 0.35);
 
-        return new TrackedFace
-        {
-            BoundingBox = smoothedBox,
-            Landmarks = smoothedLandmarks,
-            MouthCenter = mouthCenter,
-            MouthRadius = mouthRadius,
-            LeftEar = leftEar,
-            RightEar = rightEar,
-            EarRadius = earRadius,
-            LeftEye = leftEye,
-            RightEye = rightEye,
-            NoseTip = noseTip,
-            Confidence = confidence
-        };
+        _trackedFace.BoundingBox = smoothedBox;
+        _trackedFace.MouthCenter = mouthCenter;
+        _trackedFace.MouthRadius = mouthRadius;
+        _trackedFace.LeftEar = leftEar;
+        _trackedFace.RightEar = rightEar;
+        _trackedFace.EarRadius = earRadius;
+        _trackedFace.LeftEye = leftEye;
+        _trackedFace.RightEye = rightEye;
+        _trackedFace.NoseTip = noseTip;
+        _trackedFace.Confidence = confidence;
+
+        return _trackedFace;
+    }
+
+    /// <summary>
+    /// Pre-warms the face detection and landmark regression models by compiling DirectML kernels.
+    /// </summary>
+    public void WarmUp()
+    {
+        _blazeFaceDetector?.WarmUp();
+        _landmarkEstimator?.WarmUp();
     }
 
     /// <summary>

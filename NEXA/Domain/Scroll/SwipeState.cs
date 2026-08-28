@@ -33,42 +33,42 @@ public class SwipeState
     /// <summary>
     /// Timestamp of the most recently triggered swipe gesture.
     /// </summary>
-    public DateTime LastSwipeTime { get; set; } = DateTime.MinValue;
+    public DateTime LastSwipeTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Flag indicating that a swipe occurred and the detector is waiting for the hand to come to a rest before allowing a new swipe.
     /// </summary>
-    public bool WaitingForRest { get; set; } = false;
+    public bool WaitingForRest { get; internal set; } = false;
 
     /// <summary>
     /// The most recently computed absolute speed (in pixels per millisecond).
     /// </summary>
-    public double LastSpeed { get; set; } = 0.0;
+    public double LastSpeed { get; internal set; } = 0.0;
 
     /// <summary>
     /// The net vertical displacement across the current history window (in pixels).
     /// </summary>
-    public double LastDeltaY { get; set; } = 0.0;
+    public double LastDeltaY { get; internal set; } = 0.0;
 
     /// <summary>
     /// The latest linear regression slope value (px/ms) indicating movement direction and speed.
     /// </summary>
-    public double LastSlope { get; set; } = 0.0;
+    public double LastSlope { get; internal set; } = 0.0;
 
     /// <summary>
     /// Current virtual physics momentum velocity (scroll units per frame). Decays over time via <see cref="MomentumDecay"/>.
     /// </summary>
-    public double MomentumVelocity { get; set; } = 0.0;
+    public double MomentumVelocity { get; internal set; } = 0.0;
 
     /// <summary>
     /// Accumulated fractional scroll delta waiting to reach full whole WHEEL_DELTA (120) units.
     /// </summary>
-    public double AccumulatedDelta { get; set; } = 0.0;
+    public double AccumulatedDelta { get; internal set; } = 0.0;
 
     /// <summary>
     /// Timestamp of the last frame where momentum decay and scroll ticks were processed.
     /// </summary>
-    public DateTime LastMomentumUpdate { get; set; } = DateTime.MinValue;
+    public DateTime LastMomentumUpdate { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Duration of the sliding history sample window (250 milliseconds).

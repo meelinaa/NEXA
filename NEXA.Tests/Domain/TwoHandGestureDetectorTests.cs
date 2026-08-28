@@ -18,7 +18,7 @@ public class TwoHandGestureDetectorTests
     public void TwoHand_MaximizeGesture_TriggersSuccessfully()
     {
         TwoHandGestureDetector testTwoHand = new();
-        Win32InputSink inputSink = new();
+        Fakes.FakeInputSink inputSink = new();
         inputSink.LastFocusedHwnd = new IntPtr(12345);
 
         Assert.False(testTwoHand.State.IsWindowActive, "2-Hand window should be inactive before fist release.");
@@ -53,7 +53,7 @@ public class TwoHandGestureDetectorTests
     public void TwoHand_CameraFrameScreenshot_TriggersAfterHold()
     {
         TwoHandGestureDetector testScreenDetector = new();
-        Win32InputSink inputSink = new();
+        Fakes.FakeInputSink inputSink = new();
 
         TrackedHand lHand1 = new() { Gesture = "L" };
         lHand1.SmoothedLandmarks2D[0] = new Point2f(400, 500);
@@ -97,7 +97,7 @@ public class TwoHandGestureDetectorTests
     public void TwoHand_ClapPlayPause_TriggersMediaToggle()
     {
         TwoHandGestureDetector testPlayPauseDetector = new();
-        Win32InputSink inputSink = new();
+        Fakes.FakeInputSink inputSink = new();
 
         TrackedHand palmHand1 = new() { Gesture = "Open Palm" };
         palmHand1.SmoothedLandmarks2D[0] = new Point2f(500, 500);

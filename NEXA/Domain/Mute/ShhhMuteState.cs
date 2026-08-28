@@ -15,7 +15,7 @@ public class ShhhMuteState
     /// <summary>
     /// Indicates whether the Index finger is currently inside the mouth target zone in the correct upright posture.
     /// </summary>
-    public bool IsInProximity { get; set; } = false;
+    public bool IsInProximity { get; internal set; } = false;
 
     /// <summary>
     /// High-precision stopwatch tracking how long the finger has been continuously held in front of the mouth.
@@ -25,7 +25,7 @@ public class ShhhMuteState
     /// <summary>
     /// Required hold duration in seconds (0.40s) to toggle mute.
     /// </summary>
-    public double RequiredHoldSeconds { get; set; } = 0.40;
+    public double RequiredHoldSeconds { get; internal set; } = 0.40;
 
     /// <summary>
     /// Current normalized hold progress from 0.0 (entered zone) to 1.0 (triggered).
@@ -35,7 +35,7 @@ public class ShhhMuteState
     /// <summary>
     /// Current distance in camera pixels between Index fingertip and mouth center.
     /// </summary>
-    public double CurrentDistanceToMouth { get; set; } = double.MaxValue;
+    public double CurrentDistanceToMouth { get; internal set; } = double.MaxValue;
 
     /// <summary>
     /// Dedicated stopwatch enforcing a 1.5-second post-mute toggle cooldown.
@@ -50,17 +50,17 @@ public class ShhhMuteState
     /// <summary>
     /// Timestamp of the last mute toggle event.
     /// </summary>
-    public DateTime LastToggleTime { get; set; } = DateTime.MinValue;
+    public DateTime LastToggleTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Current system mute state (<c>true</c> = Muted, <c>false</c> = Unmuted).
     /// </summary>
-    public bool IsMuted { get; set; } = false;
+    public bool IsMuted { get; internal set; } = false;
 
     /// <summary>
     /// 2D coordinates of the mouth center during the most recent frame.
     /// </summary>
-    public Point2f LastMouthCenter { get; set; }
+    public Point2f LastMouthCenter { get; internal set; }
 
     /// <summary>
     /// Resets the proximity hold timer.

@@ -37,12 +37,12 @@ public class TwoHandGestureState
     /// <summary>
     /// Timestamp of when the fist-grab gesture was most recently released.
     /// </summary>
-    public DateTime LastFistReleaseTime { get; set; } = DateTime.MinValue;
+    public DateTime LastFistReleaseTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Timestamp of when a two-hand gesture action was most recently dispatched.
     /// </summary>
-    public DateTime LastTriggerTime { get; set; } = DateTime.MinValue;
+    public DateTime LastTriggerTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Indicates whether the 3.0-second post-fist interaction window is currently active.
@@ -74,29 +74,29 @@ public class TwoHandGestureState
     /// <summary>
     /// Number of consecutive frames that dual open palms have been touching in clap/prayer posture.
     /// </summary>
-    public int ConsecutiveClapFrames { get; set; } = 0;
+    public int ConsecutiveClapFrames { get; internal set; } = 0;
 
     /// <summary>
     /// Timestamp of the most recent Play/Pause trigger for AR animation feedback.
     /// </summary>
-    public DateTime LastMediaPlayPauseTime { get; set; } = DateTime.MinValue;
+    public DateTime LastMediaPlayPauseTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// 2D camera coordinates center point where the Play/Pause pulse animation originates.
     /// </summary>
-    public Point2f LastMediaFeedbackCenter { get; set; }
+    public Point2f LastMediaFeedbackCenter { get; internal set; }
 
     // --- Camera Frame Screenshot Tracking ---
 
     /// <summary>
     /// Gets or sets a value indicating whether both hands are simultaneously forming an "L" posture.
     /// </summary>
-    public bool IsCameraFrameActive { get; set; } = false;
+    public bool IsCameraFrameActive { get; internal set; } = false;
 
     /// <summary>
     /// The live 2D camera coordinates bounding rectangle spanned by all 4 extended fingertips (Thumb 1, Index 1, Thumb 2, Index 2).
     /// </summary>
-    public Rect2f LiveCameraFrameRect { get; set; }
+    public Rect2f LiveCameraFrameRect { get; internal set; }
 
     /// <summary>
     /// Dedicated stopwatch tracking continuous double-touch hold duration before triggering a screenshot.
@@ -106,17 +106,17 @@ public class TwoHandGestureState
     /// <summary>
     /// The required double-touch hold duration in seconds (2.0s) before executing a screenshot.
     /// </summary>
-    public double RequiredScreenshotHoldSeconds { get; set; } = 2.0;
+    public double RequiredScreenshotHoldSeconds { get; internal set; } = 2.0;
 
     /// <summary>
     /// Elapsed double-touch hold duration in seconds.
     /// </summary>
-    public double ScreenshotHoldDurationSeconds { get; set; } = 0.0;
+    public double ScreenshotHoldDurationSeconds { get; internal set; } = 0.0;
 
     /// <summary>
     /// Normalized hold progress from 0.0 to 1.0.
     /// </summary>
-    public double ScreenshotHoldProgress { get; set; } = 0.0;
+    public double ScreenshotHoldProgress { get; internal set; } = 0.0;
 
     /// <summary>
     /// Dedicated stopwatch enforcing a 2.0-second cooldown blocking Maximize and consecutive screenshots immediately following a trigger.
@@ -131,49 +131,49 @@ public class TwoHandGestureState
     /// <summary>
     /// Timestamp of the most recently captured screenshot for AR flash rendering.
     /// </summary>
-    public DateTime LastScreenshotTime { get; set; } = DateTime.MinValue;
+    public DateTime LastScreenshotTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// 2D camera coordinates rectangle of the most recently captured screenshot.
     /// </summary>
-    public Rect2f LastCapturedFrameRect { get; set; }
+    public Rect2f LastCapturedFrameRect { get; internal set; }
 
     /// <summary>
     /// Absolute file system path of the most recently saved screenshot file.
     /// </summary>
-    public string LastSavedFilePath { get; set; } = string.Empty;
+    public string LastSavedFilePath { get; internal set; } = string.Empty;
 
     // --- Maximize Touch Tracking ---
 
     /// <summary>
     /// Gets or sets a value indicating whether both index fingertips are actively touching.
     /// </summary>
-    public bool IsTouchActive { get; set; } = false;
+    public bool IsTouchActive { get; internal set; } = false;
 
     /// <summary>
     /// Number of consecutive frames the index fingertips have been touching.
     /// </summary>
-    public int ConsecutiveTouchFrames { get; set; } = 0;
+    public int ConsecutiveTouchFrames { get; internal set; } = 0;
 
     /// <summary>
     /// Timestamp when index fingertip touch was established.
     /// </summary>
-    public DateTime TouchStartTime { get; set; } = DateTime.MinValue;
+    public DateTime TouchStartTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Horizontal distance between index fingertips captured at the touch anchor moment.
     /// </summary>
-    public double TouchAnchorDistance { get; set; } = 0.0;
+    public double TouchAnchorDistance { get; internal set; } = 0.0;
 
     /// <summary>
     /// 2D coordinate of the first hand's index fingertip at touch time.
     /// </summary>
-    public Point2f TouchPoint1 { get; set; }
+    public Point2f TouchPoint1 { get; internal set; }
 
     /// <summary>
     /// 2D coordinate of the second hand's index fingertip at touch time.
     /// </summary>
-    public Point2f TouchPoint2 { get; set; }
+    public Point2f TouchPoint2 { get; internal set; }
 
     // --- Minimize Synchronous Downward Tracking ---
 
@@ -187,15 +187,15 @@ public class TwoHandGestureState
     /// <summary>
     /// Action label ("MAXIMIZE", "MINIMIZE", "SCREENSHOT", or "PLAY / PAUSE") of the most recently executed gesture.
     /// </summary>
-    public string LastAction { get; set; } = string.Empty;
+    public string LastAction { get; internal set; } = string.Empty;
 
     /// <summary>
     /// Timestamp of the last executed action for floating AR animation rendering.
     /// </summary>
-    public DateTime LastFeedbackTime { get; set; } = DateTime.MinValue;
+    public DateTime LastFeedbackTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// 2D center point between both hands where visual feedback animation originates.
     /// </summary>
-    public Point2f LastFeedbackCenter { get; set; }
+    public Point2f LastFeedbackCenter { get; internal set; }
 }

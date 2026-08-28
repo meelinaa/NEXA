@@ -16,7 +16,7 @@ public class WindowGrabDetectorTests
     public void FistGesture_StartsHoldTimer_AndTransitionsToGrabbed()
     {
         WindowGrabDetector detector = new(1920, 1080);
-        Win32InputSink inputSink = new();
+        Fakes.FakeInputSink inputSink = new();
 
         TrackedHand hand = new() { Gesture = "Fist" };
         hand.SmoothedLandmarks2D[9] = new Point2f(640, 360);

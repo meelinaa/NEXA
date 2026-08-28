@@ -27,13 +27,20 @@ public class BlazeFaceDetector : IDisposable
     private const int InputWidth = 128;
     private const int InputHeight = 128;
 
+    // Zero-allocation reusable OpenCV matrices and input tensor buffer
+    private readonly Mat _resizedMat = new();
+    private readonly Mat _paddedMat = new();
+    private readonly Mat _rgbMat = new();
+    private readonly DenseTensor<float> _inputTensor = new([1, 3, InputHeight, InputWidth]);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="BlazeFaceDetector"/> class.
     /// </summary>
     /// <param name="modelPath">File path to blazeface.onnx.</param>
     /// <param name="scoreThreshold">Minimum detection confidence threshold (default: 0.6f).</param>
     /// <param name="nmsThreshold">Non-Maximum Suppression IoU threshold (default: 0.3f).</param>
-    public BlazeFaceDetector(string modelPath, float scoreThreshold = 0.6f, float nmsThreshold = 0.3f)
+    /// <param name="enableGpu">Whether to attempt DirectML GPU hardware acceleration with automatic CPU fallback.</param>
+    public BlazeFaceDetector(string modelPath, float scoreThreshold = 0.6f, float nmsThreshold = 0.3f, bool enableGpu = true)
     {
         _scoreThreshold = scoreThreshold;
         _nmsThreshold = nmsThreshold;
@@ -43,6 +50,18 @@ public class BlazeFaceDetector : IDisposable
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
         };
+
+        if (enableGpu)
+        {
+            try
+            {
+                options.AppendExecutionProvider_DML(0);
+            }
+            catch
+            {
+                // Graceful fallback to CPU Execution Provider
+            }
+        }
 
         _session = new InferenceSession(modelPath, options);
         _anchors = GenerateAnchors();
@@ -109,31 +128,24 @@ public class BlazeFaceDetector : IDisposable
         int padRight = padW - padLeft;
         int padBottom = padH - padTop;
 
-        using Mat resized = new();
-        Cv2.Resize(image, resized, new Size(targetW, targetH));
-
-        using Mat padded = new();
-        Cv2.CopyMakeBorder(resized, padded, padTop, padBottom, padLeft, padRight, BorderTypes.Constant, Scalar.All(0));
-
-        using Mat rgb = new();
-        Cv2.CvtColor(padded, rgb, ColorConversionCodes.BGR2RGB);
+        Cv2.Resize(image, _resizedMat, new Size(targetW, targetH));
+        Cv2.CopyMakeBorder(_resizedMat, _paddedMat, padTop, padBottom, padLeft, padRight, BorderTypes.Constant, Scalar.All(0));
+        Cv2.CvtColor(_paddedMat, _rgbMat, ColorConversionCodes.BGR2RGB);
 
         // 2. Populate NCHW Tensor [1, 3, 128, 128]
-        DenseTensor<float> tensor = new([1, 3, InputHeight, InputWidth]);
-
         unsafe
         {
-            byte* ptr = (byte*)rgb.Data.ToPointer();
-            int step = (int)rgb.Step();
+            byte* ptr = (byte*)_rgbMat.Data.ToPointer();
+            int step = (int)_rgbMat.Step();
 
             for (int y = 0; y < InputHeight; y++)
             {
                 byte* row = ptr + y * step;
                 for (int x = 0; x < InputWidth; x++)
                 {
-                    tensor[0, 0, y, x] = row[x * 3 + 0] / 255.0f; // R
-                    tensor[0, 1, y, x] = row[x * 3 + 1] / 255.0f; // G
-                    tensor[0, 2, y, x] = row[x * 3 + 2] / 255.0f; // B
+                    _inputTensor[0, 0, y, x] = row[x * 3 + 0] / 255.0f; // R
+                    _inputTensor[0, 1, y, x] = row[x * 3 + 1] / 255.0f; // G
+                    _inputTensor[0, 2, y, x] = row[x * 3 + 2] / 255.0f; // B
                 }
             }
         }
@@ -141,23 +153,26 @@ public class BlazeFaceDetector : IDisposable
         // 3. Execute ONNX inference
         List<NamedOnnxValue> inputs =
         [
-            NamedOnnxValue.CreateFromTensor("input", tensor)
+            NamedOnnxValue.CreateFromTensor("input", _inputTensor)
         ];
 
         using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
 
-        float[] boxData = [];
-        float[] scoreData = [];
+        ReadOnlySpan<float> boxData = default;
+        ReadOnlySpan<float> scoreData = default;
 
         foreach (NamedOnnxValue output in outputs)
         {
-            if (output.Name == "regressors")
+            if (output.Value is DenseTensor<float> tensor)
             {
-                boxData = output.AsEnumerable<float>().ToArray();
-            }
-            else if (output.Name == "scores")
-            {
-                scoreData = output.AsEnumerable<float>().ToArray();
+                if (output.Name == "regressors")
+                {
+                    boxData = tensor.Buffer.Span;
+                }
+                else if (output.Name == "scores")
+                {
+                    scoreData = tensor.Buffer.Span;
+                }
             }
         }
 
@@ -227,10 +242,32 @@ public class BlazeFaceDetector : IDisposable
     }
 
     /// <summary>
-    /// Disposes ONNX session resources.
+    /// Pre-warms the ONNX inference session and compiles DirectML shaders using the pre-allocated input tensor.
+    /// </summary>
+    public void WarmUp()
+    {
+        try
+        {
+            List<NamedOnnxValue> inputs =
+            [
+                NamedOnnxValue.CreateFromTensor("input", _inputTensor)
+            ];
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
+        }
+        catch
+        {
+            // Warm-up exceptions ignored
+        }
+    }
+
+    /// <summary>
+    /// Disposes ONNX session resources and pre-allocated OpenCV matrices.
     /// </summary>
     public void Dispose()
     {
+        _resizedMat.Dispose();
+        _paddedMat.Dispose();
+        _rgbMat.Dispose();
         _session?.Dispose();
         GC.SuppressFinalize(this);
     }

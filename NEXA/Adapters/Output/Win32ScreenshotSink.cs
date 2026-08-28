@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NEXA.Abstractions;
 using OpenCvSharp;
+using Serilog;
 
 namespace NEXA.Adapters.Output;
 
@@ -25,6 +26,8 @@ namespace NEXA.Adapters.Output;
 /// </summary>
 public class Win32ScreenshotSink : IScreenshotSink
 {
+    private static readonly ILogger _log = Log.ForContext<Win32ScreenshotSink>();
+
     private const int SRCCOPY = 0x00CC0020;
     private const uint CF_BITMAP = 2;
 
@@ -121,9 +124,10 @@ public class Win32ScreenshotSink : IScreenshotSink
                     CloseClipboard();
                 }
             }
-            catch
+            catch (ExternalException ex)
             {
-                // Clipboard failure should not prevent disk file writing
+                // Clipboard may be locked by another process – non-fatal, file write still proceeds
+                _log.Warning(ex, "Clipboard operation failed (Win32 error {ErrorCode}). Screenshot will still be saved to disk.", ex.ErrorCode);
             }
 
             // 2. Extract Bitmap Pixels into OpenCvSharp Mat & Save PNG
@@ -167,9 +171,9 @@ public class Win32ScreenshotSink : IScreenshotSink
                     pinned.Free();
                 }
             }
-            catch
+            catch (Exception ex) when (ex is COMException or IOException or ExternalException)
             {
-                // File writing fallback
+                _log.Error(ex, "Screenshot file write failed for directory '{OutputDirectory}'.", outputDirectory);
             }
         }
 
@@ -207,9 +211,10 @@ public class Win32ScreenshotSink : IScreenshotSink
                 };
                 Process.Start(psi);
             }
-            catch
+            catch (Exception ex)
             {
-                // Graceful fallback if PowerShell toast dispatch is restricted
+                // Non-critical: toast notifications are cosmetic only
+                _log.Debug(ex, "Windows toast notification dispatch failed. This is non-critical.");
             }
         });
     }

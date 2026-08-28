@@ -24,7 +24,7 @@ public class LockSequenceState
     /// <summary>
     /// The current milestone step in the 4-stage sequence.
     /// </summary>
-    public LockSequenceStep CurrentStep { get; set; } = LockSequenceStep.Idle;
+    public LockSequenceStep CurrentStep { get; internal set; } = LockSequenceStep.Idle;
 
     /// <summary>
     /// High-precision stopwatch tracking elapsed time since the most recent step transition.
@@ -34,17 +34,17 @@ public class LockSequenceState
     /// <summary>
     /// Maximum allowed time in seconds (0.80s) between successive posture changes before the state machine resets to <see cref="LockSequenceStep.Idle"/>.
     /// </summary>
-    public double StepTimeoutSeconds { get; set; } = 0.80;
+    public double StepTimeoutSeconds { get; internal set; } = 0.80;
 
     /// <summary>
     /// Number of consecutive frames the current required posture has been maintained (for debouncing).
     /// </summary>
-    public int ConsecutivePoseFrames { get; set; } = 0;
+    public int ConsecutivePoseFrames { get; internal set; } = 0;
 
     /// <summary>
     /// Timestamp of the most recent workstation lock event.
     /// </summary>
-    public DateTime LastLockTriggerTime { get; set; } = DateTime.MinValue;
+    public DateTime LastLockTriggerTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Dedicated stopwatch enforcing a 3.0-second post-lock refractory cooldown.
@@ -73,7 +73,7 @@ public class LockSequenceState
     /// <summary>
     /// 2D camera coordinates of the hand when transitioning steps (for floating HUD feedback).
     /// </summary>
-    public Point2f LastHandPos { get; set; }
+    public Point2f LastHandPos { get; internal set; }
 
     /// <summary>
     /// Resets the sequence state machine back to <see cref="LockSequenceStep.Idle"/>.

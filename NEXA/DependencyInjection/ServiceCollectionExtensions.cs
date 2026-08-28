@@ -50,7 +50,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IInputSink, Win32InputSink>();
         services.AddSingleton<IAudioSink, Win32AudioSink>();
         services.AddSingleton<IScreenshotSink, Win32ScreenshotSink>();
-        services.AddSingleton<IFrameSource, OpenCvFrameSource>();
+        services.AddSingleton<OpenCvFrameSource>();
+        services.AddSingleton<RemoteStreamFrameSource>();
+        services.AddSingleton<SwitchableFrameSource>();
+        services.AddSingleton<IFrameSource>(sp => sp.GetRequiredService<SwitchableFrameSource>());
         services.AddSingleton<IDisplaySink, OpenCvDisplaySink>();
         services.AddSingleton<IKeyboardEventSource, OpenCvKeyboardEventSource>();
 
@@ -58,13 +61,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sp => (Win32InputSink)sp.GetRequiredService<IInputSink>());
         services.AddSingleton(sp => (Win32AudioSink)sp.GetRequiredService<IAudioSink>());
         services.AddSingleton(sp => (Win32ScreenshotSink)sp.GetRequiredService<IScreenshotSink>());
-        services.AddSingleton(sp => (OpenCvFrameSource)sp.GetRequiredService<IFrameSource>());
+        services.AddSingleton(sp => sp.GetRequiredService<SwitchableFrameSource>().WebcamSource);
         services.AddSingleton(sp => (OpenCvDisplaySink)sp.GetRequiredService<IDisplaySink>());
         services.AddSingleton(sp => (OpenCvKeyboardEventSource)sp.GetRequiredService<IKeyboardEventSource>());
 
         // 2. Vision Models & Trackers
         services.AddSingleton<HandTracker>(sp => new HandTracker(palmModelPath, landmarkModelPath));
         services.AddSingleton<FaceTracker>();
+        services.AddSingleton<IVisionPipeline, AsyncVisionPipeline>();
 
         // 3. Renderers & Visualizers
         services.AddSingleton<HandMeshRenderer>();
@@ -110,9 +114,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<TwoHandGestureController>();
         services.AddSingleton<WindowGrabController>();
 
-        // 6. Application Loop & Hotkey Dispatcher
+        // 6. Application Loop, Hotkey Dispatcher & Controller Bundle
         services.AddSingleton<KeyboardCommandHandler>();
-        services.AddSingleton<NexaEngine>(sp =>
+        services.AddSingleton<NexaControllerBundle>(sp =>
         {
             WindowGrabController grabCtrl = sp.GetRequiredService<WindowGrabController>();
             TwoHandGestureController twoHandCtrl = sp.GetRequiredService<TwoHandGestureController>();
@@ -120,15 +124,7 @@ public static class ServiceCollectionExtensions
             // Wire 3-second post-fist window trigger for two-hand maximize/minimize
             grabCtrl.OnFistReleased += () => twoHandCtrl.Detector.NotifyFistReleased();
 
-            return new NexaEngine(
-                sp.GetRequiredService<HandTracker>(),
-                sp.GetRequiredService<FaceTracker>(),
-                sp.GetRequiredService<IInputSink>(),
-                sp.GetRequiredService<IAudioSink>(),
-                sp.GetRequiredService<IScreenshotSink>(),
-                sp.GetRequiredService<HandMeshRenderer>(),
-                sp.GetRequiredService<FaceMeshRenderer>(),
-                sp.GetRequiredService<VirtualObjectController>(),
+            return new NexaControllerBundle(
                 sp.GetRequiredService<MouseController>(),
                 sp.GetRequiredService<ScrollController>(),
                 grabCtrl,
@@ -139,11 +135,25 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<CircleUndoController>(),
                 sp.GetRequiredService<ShhhMuteController>(),
                 sp.GetRequiredService<HearNoEvilController>(),
+                sp.GetRequiredService<VirtualObjectController>());
+        });
+        services.AddSingleton<NexaEngine>(sp =>
+        {
+            return new NexaEngine(
+                sp.GetRequiredService<HandTracker>(),
+                sp.GetRequiredService<FaceTracker>(),
+                sp.GetRequiredService<IInputSink>(),
+                sp.GetRequiredService<IAudioSink>(),
+                sp.GetRequiredService<IScreenshotSink>(),
+                sp.GetRequiredService<HandMeshRenderer>(),
+                sp.GetRequiredService<FaceMeshRenderer>(),
+                sp.GetRequiredService<NexaControllerBundle>(),
                 sp.GetRequiredService<HudRenderer>(),
                 sp.GetRequiredService<KeyboardCommandHandler>(),
                 sp.GetRequiredService<IFrameSource>(),
                 sp.GetRequiredService<IDisplaySink>(),
-                sp.GetRequiredService<IKeyboardEventSource>()
+                sp.GetRequiredService<IKeyboardEventSource>(),
+                sp.GetRequiredService<IVisionPipeline>()
             );
         });
 

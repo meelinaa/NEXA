@@ -22,6 +22,10 @@ public class HandTracker : IDisposable
     private readonly Dictionary<int, (OneEuroFilter x, OneEuroFilter y, OneEuroFilter z)> _filters = new();
     private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
 
+    // Zero-allocation reusable object pool for TrackedHand instances and frame result buffer
+    private readonly List<TrackedHand> _handsBuffer = new(4);
+    private readonly TrackedHand[] _handPool = new TrackedHand[4];
+
     /// <summary>
     /// Gets or sets a value indicating whether OneEuroFilter smoothing is active. Default is <c>true</c>.
     /// </summary>
@@ -49,6 +53,15 @@ public class HandTracker : IDisposable
         _palmDetector = palmDetector;
         _landmarkEstimator = landmarkEstimator;
 
+        for (int i = 0; i < _handPool.Length; i++)
+        {
+            _handPool[i] = new TrackedHand
+            {
+                SmoothedLandmarks2D = new Point2f[21],
+                SmoothedLandmarks3D = new Point3f[21]
+            };
+        }
+
         for (int i = 0; i < 21; i++)
         {
             // minCutoff = 1.2 aggressively removes still-hand camera noise;
@@ -68,31 +81,30 @@ public class HandTracker : IDisposable
     /// <returns>A list of tracked hand instances containing smoothed landmarks and classified gestures.</returns>
     public List<TrackedHand> ProcessFrame(Mat frame)
     {
-        List<TrackedHand> hands = new();
+        _handsBuffer.Clear();
         if (_palmDetector == null || _landmarkEstimator == null)
         {
-            return hands;
+            return _handsBuffer;
         }
 
         List<PalmDetectionResult> palms = _palmDetector.Detect(frame);
         double timestamp = _stopwatch.Elapsed.TotalSeconds;
 
+        int handIndex = 0;
         foreach (PalmDetectionResult palm in palms)
         {
+            if (handIndex >= _handPool.Length) break;
+
             HandLandmarkResult? landmarkResult = _landmarkEstimator.Estimate(frame, palm);
             if (landmarkResult == null)
             {
                 continue;
             }
 
-            TrackedHand tracked = new()
-            {
-                RawResult = landmarkResult,
-                SmoothedLandmarks2D = new Point2f[21],
-                SmoothedLandmarks3D = new Point3f[21]
-            };
+            TrackedHand tracked = _handPool[handIndex++];
+            tracked.RawResult = landmarkResult;
 
-            // Apply 1€ adaptive filtering to all 21 joints
+            // Apply 1€ adaptive filtering to all 21 joints in-place without new array allocations
             for (int i = 0; i < 21; i++)
             {
                 Point3f pt = landmarkResult.Landmarks[i];
@@ -113,7 +125,7 @@ public class HandTracker : IDisposable
 
             // Classify hand pose gesture via specialized anatomical classifier
             tracked.Gesture = HandGestureClassifier.Classify(tracked);
-            hands.Add(tracked);
+            _handsBuffer.Add(tracked);
         }
 
         // Reset filter states when no hands are in the scene to prevent interpolation drift
@@ -127,7 +139,16 @@ public class HandTracker : IDisposable
             }
         }
 
-        return hands;
+        return _handsBuffer;
+    }
+
+    /// <summary>
+    /// Pre-warms the palm detection and landmark regression models by compiling DirectML kernels.
+    /// </summary>
+    public void WarmUp()
+    {
+        _palmDetector?.WarmUp();
+        _landmarkEstimator?.WarmUp();
     }
 
     /// <summary>

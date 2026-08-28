@@ -12,7 +12,7 @@ namespace NEXA.Domain.Scroll;
 /// <b>What it is:</b> The orchestration controller for swipe-to-scroll functionality.
 /// </para>
 /// </summary>
-public class ScrollController
+public class ScrollController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly ScrollFeedbackRenderer _renderer;
@@ -96,6 +96,13 @@ public class ScrollController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        UpdateMomentum();
+        Update(context.PrimaryHand);
+    }
+
     /// <summary>
     /// Renders floating animated swipe arrows and real-time regression slope text onto the camera frame.
     /// </summary>
@@ -103,5 +110,36 @@ public class ScrollController
     public void RenderFeedback(Mat frame)
     {
         _renderer.Render(frame, Detector);
+    }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string scrollStatus;
+        if (!Enabled)
+            scrollStatus = "AUS (Taste W)";
+        else if (!IsWindowActive)
+            scrollStatus = "Gesperrt (Erst Zeigen)";
+        else if (State.WaitingForRest)
+            scrollStatus = $"Cooldown ({RemainingWindowSeconds:F1}s)";
+        else
+            scrollStatus = $"Bereit ({RemainingWindowSeconds:F1}s)";
+
+        return $"Scroll (W): {scrollStatus}";
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if (!IsWindowActive) return new Scalar(120, 120, 120);
+        if (State.WaitingForRest) return new Scalar(0, 180, 255);
+        return new Scalar(0, 255, 120);
     }
 }

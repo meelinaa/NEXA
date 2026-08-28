@@ -1,19 +1,8 @@
 using System.Diagnostics;
 using NEXA.Adapters.Output;
 using NEXA.Application;
-using NEXA.Domain.Click;
-using NEXA.Domain.EarsMute;
-using NEXA.Domain.Grab;
-using NEXA.Domain.Lock;
-using NEXA.Domain.MonitorThrow;
-using NEXA.Domain.Mute;
-using NEXA.Domain.Scroll;
-using NEXA.Domain.TwoHand;
-using NEXA.Domain.Undo;
-using NEXA.Domain.Volume;
 using NEXA.Face;
 using NEXA.Hand;
-using NEXA.Object;
 using Xunit;
 
 namespace NEXA.Tests.Application;
@@ -27,25 +16,35 @@ public class KeyboardCommandHandlerTests
     private readonly HandTracker _handTracker = new("dummy_palm.onnx", "dummy_landmark.onnx");
     private readonly HandMeshRenderer _handRenderer = new();
     private readonly FaceMeshRenderer _faceRenderer = new();
-    private readonly VirtualObjectController _virtualObject = new();
-    private readonly MouseController _mouseController = new();
-    private readonly ScrollController _scrollController = new();
-    private readonly WindowGrabController _windowGrabController = new();
-    private readonly TwoHandGestureController _twoHandController = new();
-    private readonly MonitorThrowController _monitorThrowController = new();
-    private readonly VolumeController _volumeController = new();
-    private readonly LockSequenceController _lockController = new();
-    private readonly CircleUndoController _circleUndoController = new();
-    private readonly ShhhMuteController _shhhMuteController = new();
-    private readonly HearNoEvilController _hearNoEvilController = new(new Win32AudioSink());
+    private readonly NexaControllerBundle _controllers;
     private bool _showHud = true;
+
+    public KeyboardCommandHandlerTests()
+    {
+        Fakes.FakeAudioSink audioSink = new();
+        Fakes.FakeInputSink inputSink = new();
+        Fakes.FakeScreenshotSink screenshotSink = new();
+
+        _controllers = new NexaControllerBundle(
+            mouse: new(inputSink),
+            scroll: new(inputSink),
+            windowGrab: new(inputSink),
+            twoHand: new(inputSink, screenshotSink),
+            monitorThrow: new(inputSink),
+            volume: new(audioSink),
+            lockSeq: new(inputSink),
+            circleUndo: new(inputSink),
+            shhhMute: new(audioSink),
+            hearNoEvil: new(audioSink),
+            virtualObject: new());
+    }
 
     // [R]IGHT-BICEP: Verifies that hotkey 'C' correctly toggles mouse controller enabled state.
     [Fact]
     public void ProcessKey_WithKeyC_TogglesMouseController()
     {
         // Arrange
-        bool initialEnabled = _mouseController.Enabled;
+        bool initialEnabled = _controllers.Mouse.Enabled;
 
         // Act
         bool shouldContinue = _handler.ProcessKey(
@@ -55,22 +54,12 @@ public class KeyboardCommandHandlerTests
             _handTracker,
             _handRenderer,
             _faceRenderer,
-            _virtualObject,
-            _mouseController,
-            _scrollController,
-            _windowGrabController,
-            _twoHandController,
-            _monitorThrowController,
-            _volumeController,
-            _lockController,
-            _circleUndoController,
-            _shhhMuteController,
-            _hearNoEvilController,
+            _controllers,
             ref _showHud);
 
         // Assert
         Assert.True(shouldContinue);
-        Assert.NotEqual(initialEnabled, _mouseController.Enabled);
+        Assert.NotEqual(initialEnabled, _controllers.Mouse.Enabled);
     }
 
     // RIGHT-[B]ICEP: Validates exit keycode boundary conditions (ESC, 'q', 'Q') return false to terminate the loop.
@@ -88,17 +77,7 @@ public class KeyboardCommandHandlerTests
             _handTracker,
             _handRenderer,
             _faceRenderer,
-            _virtualObject,
-            _mouseController,
-            _scrollController,
-            _windowGrabController,
-            _twoHandController,
-            _monitorThrowController,
-            _volumeController,
-            _lockController,
-            _circleUndoController,
-            _shhhMuteController,
-            _hearNoEvilController,
+            _controllers,
             ref _showHud);
 
         // Assert
@@ -110,14 +89,14 @@ public class KeyboardCommandHandlerTests
     public void ProcessKey_TogglingKeyTwice_RestoresOriginalState()
     {
         // Arrange
-        bool originalState = _volumeController.Enabled;
+        bool originalState = _controllers.Volume.Enabled;
 
         // Act
-        _handler.ProcessKey('v', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _virtualObject, _mouseController, _scrollController, _windowGrabController, _twoHandController, _monitorThrowController, _volumeController, _lockController, _circleUndoController, _shhhMuteController, _hearNoEvilController, ref _showHud);
-        _handler.ProcessKey('v', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _virtualObject, _mouseController, _scrollController, _windowGrabController, _twoHandController, _monitorThrowController, _volumeController, _lockController, _circleUndoController, _shhhMuteController, _hearNoEvilController, ref _showHud);
+        _handler.ProcessKey('v', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _controllers, ref _showHud);
+        _handler.ProcessKey('v', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _controllers, ref _showHud);
 
         // Assert
-        Assert.Equal(originalState, _volumeController.Enabled);
+        Assert.Equal(originalState, _controllers.Volume.Enabled);
     }
 
     // RIGHT-BI[C]HECK: Cross-checks uppercase and lowercase key equivalents producing identical state transformations.
@@ -125,14 +104,14 @@ public class KeyboardCommandHandlerTests
     public void ProcessKey_UpperAndLowerCase_ProduceIdenticalStateTransformations()
     {
         // Arrange
-        bool initialGrab = _windowGrabController.Enabled;
+        bool initialGrab = _controllers.WindowGrab.Enabled;
 
         // Act
-        _handler.ProcessKey('g', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _virtualObject, _mouseController, _scrollController, _windowGrabController, _twoHandController, _monitorThrowController, _volumeController, _lockController, _circleUndoController, _shhhMuteController, _hearNoEvilController, ref _showHud);
-        bool afterLower = _windowGrabController.Enabled;
+        _handler.ProcessKey('g', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _controllers, ref _showHud);
+        bool afterLower = _controllers.WindowGrab.Enabled;
 
-        _handler.ProcessKey('G', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _virtualObject, _mouseController, _scrollController, _windowGrabController, _twoHandController, _monitorThrowController, _volumeController, _lockController, _circleUndoController, _shhhMuteController, _hearNoEvilController, ref _showHud);
-        bool afterUpper = _windowGrabController.Enabled;
+        _handler.ProcessKey('G', 1280, 720, _handTracker, _handRenderer, _faceRenderer, _controllers, ref _showHud);
+        bool afterUpper = _controllers.WindowGrab.Enabled;
 
         // Assert
         Assert.NotEqual(initialGrab, afterLower);
@@ -157,17 +136,7 @@ public class KeyboardCommandHandlerTests
             _handTracker,
             _handRenderer,
             _faceRenderer,
-            _virtualObject,
-            _mouseController,
-            _scrollController,
-            _windowGrabController,
-            _twoHandController,
-            _monitorThrowController,
-            _volumeController,
-            _lockController,
-            _circleUndoController,
-            _shhhMuteController,
-            _hearNoEvilController,
+            _controllers,
             ref _showHud);
 
         // Assert
@@ -192,17 +161,7 @@ public class KeyboardCommandHandlerTests
                 _handTracker,
                 _handRenderer,
                 _faceRenderer,
-                _virtualObject,
-                _mouseController,
-                _scrollController,
-                _windowGrabController,
-                _twoHandController,
-                _monitorThrowController,
-                _volumeController,
-                _lockController,
-                _circleUndoController,
-                _shhhMuteController,
-                _hearNoEvilController,
+                _controllers,
                 ref _showHud);
         }
         sw.Stop();

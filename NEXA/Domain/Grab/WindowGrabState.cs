@@ -31,57 +31,57 @@ public class WindowGrabState
     /// <summary>
     /// Gets or sets a value indicating whether a desktop window is actively grabbed and following hand motion.
     /// </summary>
-    public bool IsGrabbed { get; set; } = false;
+    public bool IsGrabbed { get; internal set; } = false;
 
     /// <summary>
     /// Duration in seconds that the fist gesture has been continuously maintained.
     /// </summary>
-    public double HoldDurationSeconds { get; set; } = 0.0;
+    public double HoldDurationSeconds { get; internal set; } = 0.0;
 
     /// <summary>
     /// Required continuous hold duration in seconds (2.0s) before grab engagement activates.
     /// </summary>
-    public double RequiredHoldSeconds { get; set; } = 2.0;
+    public double RequiredHoldSeconds { get; internal set; } = 2.0;
 
     /// <summary>
     /// The native window handle (HWND) of the currently grabbed window.
     /// </summary>
-    public IntPtr TargetHwnd { get; set; } = IntPtr.Zero;
+    public IntPtr TargetHwnd { get; internal set; } = IntPtr.Zero;
 
     /// <summary>
     /// The cached title text of the grabbed window, queried strictly once on grab start.
     /// </summary>
-    public string CachedWindowTitle { get; set; } = string.Empty;
+    public string CachedWindowTitle { get; internal set; } = string.Empty;
 
     /// <summary>
     /// The initial desktop rectangle (X, Y, Width, Height) of the window when the grab engaged.
     /// </summary>
-    public Rect InitialWindowBounds { get; set; }
+    public Rect InitialWindowBounds { get; internal set; }
 
     /// <summary>
     /// The initial horizontal desktop screen coordinate of the hand when the grab engaged.
     /// </summary>
-    public int InitialHandScreenX { get; set; }
+    public int InitialHandScreenX { get; internal set; }
 
     /// <summary>
     /// The initial vertical desktop screen coordinate of the hand when the grab engaged.
     /// </summary>
-    public int InitialHandScreenY { get; set; }
+    public int InitialHandScreenY { get; internal set; }
 
     /// <summary>
     /// The calculated current target desktop X coordinate for the window.
     /// </summary>
-    public int CurrentTargetX { get; set; }
+    public int CurrentTargetX { get; internal set; }
 
     /// <summary>
     /// The calculated current target desktop Y coordinate for the window.
     /// </summary>
-    public int CurrentTargetY { get; set; }
+    public int CurrentTargetY { get; internal set; }
 
     /// <summary>
     /// The current edge snap docking alignment of the grabbed window.
     /// </summary>
-    public WindowSnapType ActiveSnap { get; set; } = WindowSnapType.None;
+    public WindowSnapType ActiveSnap { get; internal set; } = WindowSnapType.None;
 
     /// <summary>
     /// Indicates whether the window is currently docked to an edge.
@@ -91,17 +91,17 @@ public class WindowGrabState
     /// <summary>
     /// The original window geometry preserved prior to the first snap action for un-dock restoration.
     /// </summary>
-    public Rect PreSnapBounds { get; set; }
+    public Rect PreSnapBounds { get; internal set; }
 
     /// <summary>
     /// The computed desktop boundary rectangle applied during the active snap state.
     /// </summary>
-    public Rect SnapBounds { get; set; }
+    public Rect SnapBounds { get; internal set; }
 
     /// <summary>
     /// Most recent 2D palm center position recorded during tracking.
     /// </summary>
-    public Point2f LastPalmCenter { get; set; }
+    public Point2f LastPalmCenter { get; internal set; }
 
     /// <summary>
     /// High-resolution stopwatch measuring continuous fist hold time.

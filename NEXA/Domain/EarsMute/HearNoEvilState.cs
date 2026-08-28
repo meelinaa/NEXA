@@ -14,17 +14,17 @@ public class HearNoEvilState
     /// <summary>
     /// Gets or sets a value indicating whether hands are currently held in proximity to the ears.
     /// </summary>
-    public bool IsInProximity { get; set; }
+    public bool IsInProximity { get; internal set; }
 
     /// <summary>
     /// Accumulated continuous duration in seconds that hands have been held at the ears.
     /// </summary>
-    public double HoldDurationSeconds { get; set; }
+    public double HoldDurationSeconds { get; internal set; }
 
     /// <summary>
     /// Required hold duration in seconds before triggering mute (0.35s, identical to microphone mute).
     /// </summary>
-    public double RequiredHoldSeconds { get; set; } = 0.35;
+    public double RequiredHoldSeconds { get; internal set; } = 0.35;
 
     /// <summary>
     /// Normalized hold progress ratio [0.0 to 1.0].
@@ -34,12 +34,12 @@ public class HearNoEvilState
     /// <summary>
     /// Timestamp of the last active proximity frame.
     /// </summary>
-    public DateTime LastHoldTime { get; set; } = DateTime.MinValue;
+    public DateTime LastHoldTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Timestamp of the last successful speaker mute toggle.
     /// </summary>
-    public DateTime LastToggleTime { get; set; } = DateTime.MinValue;
+    public DateTime LastToggleTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Gets a value indicating whether the detector is in refractory cooldown (1.5s) to eliminate toggle flicker.
@@ -49,17 +49,17 @@ public class HearNoEvilState
     /// <summary>
     /// Cached state indicating whether master speaker audio output is currently muted.
     /// </summary>
-    public bool IsSpeakerMuted { get; set; }
+    public bool IsSpeakerMuted { get; internal set; }
 
     /// <summary>
     /// Last detected spatial coordinate of the left ear.
     /// </summary>
-    public Point2f LastLeftEar { get; set; }
+    public Point2f LastLeftEar { get; internal set; }
 
     /// <summary>
     /// Last detected spatial coordinate of the right ear.
     /// </summary>
-    public Point2f LastRightEar { get; set; }
+    public Point2f LastRightEar { get; internal set; }
 
     /// <summary>
     /// Resets proximity timers and hold duration.

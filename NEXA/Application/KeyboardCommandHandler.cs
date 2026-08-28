@@ -1,17 +1,6 @@
 using System;
-using NEXA.Domain.Click;
-using NEXA.Domain.EarsMute;
-using NEXA.Domain.Grab;
-using NEXA.Domain.Lock;
-using NEXA.Domain.MonitorThrow;
-using NEXA.Domain.Mute;
-using NEXA.Domain.Scroll;
-using NEXA.Domain.TwoHand;
-using NEXA.Domain.Undo;
-using NEXA.Domain.Volume;
 using NEXA.Face;
 using NEXA.Hand;
-using NEXA.Object;
 
 namespace NEXA.Application;
 
@@ -57,17 +46,7 @@ public class KeyboardCommandHandler
     /// <param name="tracker">Hand tracker instance.</param>
     /// <param name="handRenderer">Hand skeleton visualizer.</param>
     /// <param name="faceRenderer">Face mesh visualizer.</param>
-    /// <param name="virtualObject">Virtual test object.</param>
-    /// <param name="mouseController">Mouse controller.</param>
-    /// <param name="scrollController">Scroll controller.</param>
-    /// <param name="windowGrabController">Window grab controller.</param>
-    /// <param name="twoHandController">Two-hand controller.</param>
-    /// <param name="monitorThrowController">Monitor throw controller.</param>
-    /// <param name="volumeController">Volume controller.</param>
-    /// <param name="lockController">Lock controller.</param>
-    /// <param name="circleUndoController">Circle undo controller.</param>
-    /// <param name="shhhMuteController">Shhh mute controller.</param>
-    /// <param name="hearNoEvilController">Hear-no-evil controller.</param>
+    /// <param name="controllers">Aggregate bundle of all gesture-domain controllers.</param>
     /// <param name="showHud">Reference boolean for HUD visibility.</param>
     /// <returns><c>false</c> if an exit key was pressed; otherwise, <c>true</c> to continue streaming.</returns>
     public bool ProcessKey(
@@ -77,17 +56,7 @@ public class KeyboardCommandHandler
         HandTracker tracker,
         HandMeshRenderer handRenderer,
         FaceMeshRenderer faceRenderer,
-        VirtualObjectController virtualObject,
-        MouseController mouseController,
-        ScrollController scrollController,
-        WindowGrabController windowGrabController,
-        TwoHandGestureController twoHandController,
-        MonitorThrowController monitorThrowController,
-        VolumeController volumeController,
-        LockSequenceController lockController,
-        CircleUndoController circleUndoController,
-        ShhhMuteController shhhMuteController,
-        HearNoEvilController hearNoEvilController,
+        NexaControllerBundle controllers,
         ref bool showHud)
     {
         if (key is 27 or 'q' or 'Q') // ESC or Q
@@ -97,43 +66,43 @@ public class KeyboardCommandHandler
 
         if (key is 'c' or 'C')
         {
-            mouseController.Enabled = !mouseController.Enabled;
+            controllers.Mouse.Enabled = !controllers.Mouse.Enabled;
         }
         else if (key is 'w' or 'W')
         {
-            scrollController.Enabled = !scrollController.Enabled;
+            controllers.Scroll.Enabled = !controllers.Scroll.Enabled;
         }
         else if (key is 'g' or 'G')
         {
-            windowGrabController.Enabled = !windowGrabController.Enabled;
+            controllers.WindowGrab.Enabled = !controllers.WindowGrab.Enabled;
         }
         else if (key is 't' or 'T')
         {
-            twoHandController.Enabled = !twoHandController.Enabled;
+            controllers.TwoHand.Enabled = !controllers.TwoHand.Enabled;
         }
         else if (key is 'm' or 'M')
         {
-            monitorThrowController.Enabled = !monitorThrowController.Enabled;
+            controllers.MonitorThrow.Enabled = !controllers.MonitorThrow.Enabled;
         }
         else if (key is 'v' or 'V')
         {
-            volumeController.Enabled = !volumeController.Enabled;
+            controllers.Volume.Enabled = !controllers.Volume.Enabled;
         }
         else if (key is 'l' or 'L')
         {
-            lockController.Enabled = !lockController.Enabled;
+            controllers.Lock.Enabled = !controllers.Lock.Enabled;
         }
         else if (key is 'u' or 'U')
         {
-            circleUndoController.Enabled = !circleUndoController.Enabled;
+            controllers.CircleUndo.Enabled = !controllers.CircleUndo.Enabled;
         }
         else if (key is 'x' or 'X')
         {
-            shhhMuteController.Enabled = !shhhMuteController.Enabled;
+            controllers.ShhhMute.Enabled = !controllers.ShhhMute.Enabled;
         }
         else if (key is 'e' or 'E')
         {
-            hearNoEvilController.Enabled = !hearNoEvilController.Enabled;
+            controllers.HearNoEvil.Enabled = !controllers.HearNoEvil.Enabled;
         }
         else if (key is 'f' or 'F')
         {
@@ -155,7 +124,7 @@ public class KeyboardCommandHandler
         }
         else if (key is 'r' or 'R')
         {
-            virtualObject.Reset(frameWidth, frameHeight);
+            controllers.VirtualObject.Reset(frameWidth, frameHeight);
         }
         else if (key is 'h' or 'H')
         {

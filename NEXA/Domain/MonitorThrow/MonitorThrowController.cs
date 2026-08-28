@@ -1,5 +1,6 @@
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -11,7 +12,7 @@ namespace NEXA.Domain.MonitorThrow;
 /// <b>What it is:</b> The controller managing cross-display window translocation.
 /// </para>
 /// </summary>
-public class MonitorThrowController
+public class MonitorThrowController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly MonitorThrowRenderer _renderer;
@@ -64,6 +65,12 @@ public class MonitorThrowController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.PrimaryHand);
+    }
+
     /// <summary>
     /// Renders edge-on posture indicators and holographic monitor transfer arrows onto the camera frame.
     /// </summary>
@@ -73,4 +80,27 @@ public class MonitorThrowController
     {
         _renderer.Render(frame, hand, State);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.PrimaryHand);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string throwStatus = Enabled
+            ? (State.InCooldown ? "Cooldown (800ms)" : (State.IsEdgeOnPosture ? "Handkante erkannt!" : "Bereit (Handkante Wisch)"))
+            : "AUS (Taste M)";
+        return TextSanitizer.ToSafeAscii($"Monitor (M): {throwStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        return State.IsEdgeOnPosture ? new Scalar(255, 100, 200) : new Scalar(0, 255, 120);
+    }
 }
+

@@ -17,7 +17,7 @@ public class MonitorThrowDetectorTests
     public void EdgeOnHand_SwipedRight_TriggersMonitorThrow()
     {
         MonitorThrowDetector testThrowDetector = new();
-        Win32InputSink inputSink = new();
+        Fakes.FakeInputSink inputSink = new();
         inputSink.LastFocusedHwnd = new IntPtr(12345);
 
         TrackedHand bladeHand = new() { Gesture = "Open Palm" };

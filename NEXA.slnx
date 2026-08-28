@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="NEXA/NEXA.csproj" />
   <Project Path="NEXA.Tests/NEXA.Tests.csproj" />
+  <Project Path="NEXA.Benchmarks/NEXA.Benchmarks.csproj" />
 </Solution>

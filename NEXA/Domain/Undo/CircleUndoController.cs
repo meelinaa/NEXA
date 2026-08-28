@@ -1,5 +1,7 @@
+using System;
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -11,7 +13,7 @@ namespace NEXA.Domain.Undo;
 /// <b>What it is:</b> The controller executing Undo (Ctrl+Z) and Redo (Ctrl+Y) when the user twists their wrist with a Peace sign.
 /// </para>
 /// </summary>
-public class CircleUndoController
+public class CircleUndoController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly CircleUndoRenderer _renderer;
@@ -68,6 +70,12 @@ public class CircleUndoController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.PrimaryHand);
+    }
+
     /// <summary>
     /// Renders visual holographic rotary dials, wrist vectors, and trigger feedback animations onto the camera frame.
     /// </summary>
@@ -77,4 +85,38 @@ public class CircleUndoController
     {
         _renderer.Render(frame, hand, State);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.PrimaryHand);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string undoStatus;
+        if (!Enabled)
+            undoStatus = "AUS (Taste U)";
+        else if (State.IsTracking && Math.Abs(State.AngleDeltaDeg) > 5.0)
+        {
+            string dir = State.AngleDeltaDeg < 0.0 ? "Undo <--" : "Redo -->";
+            string sign = State.AngleDeltaDeg >= 0 ? "+" : "";
+            undoStatus = $"{dir} ({sign}{State.AngleDeltaDeg:F0} deg / 42 deg)";
+        }
+        else
+            undoStatus = "Bereit (Peace Handgelenk-Dreh)";
+
+        return TextSanitizer.ToSafeAscii($"Undo/Redo (U): {undoStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if (State.IsTracking && Math.Abs(State.AngleDeltaDeg) > 5.0)
+            return State.AngleDeltaDeg < 0.0 ? new Scalar(0, 220, 255) : new Scalar(255, 160, 0);
+        return new Scalar(0, 255, 120);
+    }
 }
+

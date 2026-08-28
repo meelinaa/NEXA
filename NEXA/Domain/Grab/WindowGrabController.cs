@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -14,7 +15,7 @@ namespace NEXA.Domain.Grab;
 /// <b>What it is:</b> The controller responsible for moving, resizing, and docking physical Windows desktop applications via hand gestures.
 /// </para>
 /// </summary>
-public class WindowGrabController
+public class WindowGrabController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly int _screenWidth;
@@ -157,6 +158,12 @@ public class WindowGrabController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.TrackedHands, context.FrameWidth, context.FrameHeight);
+    }
+
     /// <summary>
     /// Renders augmented-reality visual feedback (hold countdown ring, scaled corner brackets, snap preview zones, and pinch caliper) onto the camera frame.
     /// </summary>
@@ -165,4 +172,42 @@ public class WindowGrabController
     {
         _renderer.Render(frame, State, ResizeState, Detector);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string winGrabStatus;
+        if (!Enabled)
+            winGrabStatus = "AUS (Taste G)";
+        else if (State.IsSnapped)
+            winGrabStatus = $"Docked ({State.ActiveSnap})";
+        else if (ResizeState.IsActive)
+            winGrabStatus = $"Resize: {ResizeState.CurrentWidth}x{ResizeState.CurrentHeight} ({ResizeState.CurrentScale:F2}x)";
+        else if (State.IsGrabbed)
+            winGrabStatus = $"Gegriffen [{TextSanitizer.ToSafeAscii(State.CachedWindowTitle)}]";
+        else if (State.HoldDurationSeconds > 0)
+            winGrabStatus = $"Halte Faust ({State.HoldDurationSeconds:F1}s / {State.RequiredHoldSeconds:F1}s)";
+        else
+            winGrabStatus = "Bereit (Faust 2s)";
+
+        return TextSanitizer.ToSafeAscii($"Fenster (G): {winGrabStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if (State.IsSnapped) return new Scalar(255, 160, 0);
+        if (ResizeState.IsActive) return new Scalar(0, 220, 255);
+        if (State.IsGrabbed) return new Scalar(0, 100, 255);
+        if (State.HoldDurationSeconds > 0) return new Scalar(0, 165, 255);
+        return new Scalar(0, 255, 120);
+    }
 }
+

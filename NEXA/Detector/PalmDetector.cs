@@ -120,18 +120,21 @@ public class PalmDetector : IDisposable
 
         using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
 
-        float[] boxData = [];
-        float[] scoreData = [];
+        ReadOnlySpan<float> boxData = default;
+        ReadOnlySpan<float> scoreData = default;
 
         foreach (NamedOnnxValue output in outputs)
         {
-            if (output.Name == "Identity")
+            if (output.Value is DenseTensor<float> tensor)
             {
-                boxData = output.AsEnumerable<float>().ToArray();
-            }
-            else if (output.Name == "Identity_1")
-            {
-                scoreData = output.AsEnumerable<float>().ToArray();
+                if (output.Name == "Identity")
+                {
+                    boxData = tensor.Buffer.Span;
+                }
+                else if (output.Name == "Identity_1")
+                {
+                    scoreData = tensor.Buffer.Span;
+                }
             }
         }
 
@@ -151,6 +154,25 @@ public class PalmDetector : IDisposable
             padBiasY,
             InputWidth,
             InputHeight);
+    }
+
+    /// <summary>
+    /// Pre-warms the ONNX inference session and compiles DirectML shaders using the pre-allocated input tensor.
+    /// </summary>
+    public void WarmUp()
+    {
+        try
+        {
+            List<NamedOnnxValue> inputs =
+            [
+                NamedOnnxValue.CreateFromTensor("input_1", _inputTensor)
+            ];
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
+        }
+        catch
+        {
+            // Warm-up exceptions ignored
+        }
     }
 
     /// <summary>

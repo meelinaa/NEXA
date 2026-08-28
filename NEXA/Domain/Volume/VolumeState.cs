@@ -22,50 +22,50 @@ public class VolumeState
     /// <summary>
     /// Gets or sets a value indicating whether the L-gesture rotary volume dial is actively engaged.
     /// </summary>
-    public bool IsActive { get; set; } = false;
+    public bool IsActive { get; internal set; } = false;
 
     /// <summary>
     /// The baseline orientation angle in degrees locked at the start of the L-gesture.
     /// </summary>
-    public double BaselineAngle { get; set; } = 0.0;
+    public double BaselineAngle { get; internal set; } = 0.0;
 
     /// <summary>
     /// The instantaneous orientation angle in degrees in the current frame.
     /// </summary>
-    public double LiveAngle { get; set; } = 0.0;
+    public double LiveAngle { get; internal set; } = 0.0;
 
     /// <summary>
     /// The continuous signed angle delta in degrees relative to the baseline orientation.
     /// </summary>
-    public double AngleDelta { get; set; } = 0.0;
+    public double AngleDelta { get; internal set; } = 0.0;
 
     /// <summary>
     /// The master audio volume level [0.0 to 1.0] captured at the start of the dial interaction.
     /// </summary>
-    public float BaselineVolume { get; set; } = 0.5f;
+    public float BaselineVolume { get; internal set; } = 0.5f;
 
     /// <summary>
     /// The calculated continuous master audio volume level [0.0 to 1.0] for the current frame.
     /// </summary>
-    public float TargetVolume { get; set; } = 0.5f;
+    public float TargetVolume { get; internal set; } = 0.5f;
 
     /// <summary>
     /// The exponentially smoothed volume level for jitter-free audio slider adjustment.
     /// </summary>
-    public float SmoothedVolume { get; set; } = 0.5f;
+    public float SmoothedVolume { get; internal set; } = 0.5f;
 
     /// <summary>
     /// 2D camera coordinate of the dial center (Middle finger MCP / Palm center [9]).
     /// </summary>
-    public Point2f DialCenter { get; set; }
+    public Point2f DialCenter { get; internal set; }
 
     /// <summary>
     /// 2D camera coordinate of the index fingertip [8].
     /// </summary>
-    public Point2f IndexTip { get; set; }
+    public Point2f IndexTip { get; internal set; }
 
     /// <summary>
     /// 2D camera coordinate of the thumb tip [4].
     /// </summary>
-    public Point2f ThumbTip { get; set; }
+    public Point2f ThumbTip { get; internal set; }
 }

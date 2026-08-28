@@ -151,28 +151,31 @@ public class HandLandmarkEstimator : IDisposable
         // 3. Execute ONNX landmark inference
         using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
 
-        float[] lmRaw = [];
-        float[] worldLmRaw = [];
+        ReadOnlySpan<float> lmRaw = default;
+        ReadOnlySpan<float> worldLmRaw = default;
         float score = 0f;
         float handedness = 0f;
 
         foreach (NamedOnnxValue outVal in outputs)
         {
-            if (outVal.Name == "Identity")
+            if (outVal.Value is DenseTensor<float> tensor)
             {
-                lmRaw = outVal.AsEnumerable<float>().ToArray();
-            }
-            else if (outVal.Name == "Identity_1")
-            {
-                score = outVal.AsEnumerable<float>().First();
-            }
-            else if (outVal.Name == "Identity_2")
-            {
-                handedness = outVal.AsEnumerable<float>().First();
-            }
-            else if (outVal.Name == "Identity_3")
-            {
-                worldLmRaw = outVal.AsEnumerable<float>().ToArray();
+                if (outVal.Name == "Identity")
+                {
+                    lmRaw = tensor.Buffer.Span;
+                }
+                else if (outVal.Name == "Identity_1")
+                {
+                    score = tensor.Buffer.Span[0];
+                }
+                else if (outVal.Name == "Identity_2")
+                {
+                    handedness = tensor.Buffer.Span[0];
+                }
+                else if (outVal.Name == "Identity_3")
+                {
+                    worldLmRaw = tensor.Buffer.Span;
+                }
             }
         }
 
@@ -307,6 +310,25 @@ public class HandLandmarkEstimator : IDisposable
         Point2f bias = new(cropX - left, cropY - top);
 
         return (padded, finalBox, bias);
+    }
+
+    /// <summary>
+    /// Pre-warms the ONNX landmark inference session and compiles DirectML shaders.
+    /// </summary>
+    public void WarmUp()
+    {
+        try
+        {
+            List<NamedOnnxValue> inputs =
+            [
+                NamedOnnxValue.CreateFromTensor("input_1", _inputTensor)
+            ];
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
+        }
+        catch
+        {
+            // Warm-up exceptions ignored
+        }
     }
 
     /// <summary>

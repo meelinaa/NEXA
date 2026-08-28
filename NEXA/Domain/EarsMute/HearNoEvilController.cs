@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Face;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -14,7 +15,7 @@ namespace NEXA.Domain.EarsMute;
 /// <b>What it is:</b> Application service linking spatial face/hand ear-proximity detection to Windows master speaker sound muting.
 /// </para>
 /// </summary>
-public class HearNoEvilController
+public class HearNoEvilController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IAudioSink _audioSink;
     private readonly HearNoEvilRenderer _renderer;
@@ -71,6 +72,12 @@ public class HearNoEvilController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.TrackedHands, context.PrimaryFace);
+    }
+
     /// <summary>
     /// Renders AR feedback including dynamic ear charging progress rings and sound mute state change banners.
     /// </summary>
@@ -81,4 +88,34 @@ public class HearNoEvilController
     {
         _renderer.Render(frame, face, hands, State, Enabled);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.PrimaryFace, context.TrackedHands);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string soundStatus;
+        if (!Enabled)
+            soundStatus = "AUS (Taste E)";
+        else if (State.IsInProximity)
+            soundStatus = $"Muten: {(int)(State.HoldProgress * 100)}%";
+        else
+            soundStatus = State.IsSpeakerMuted ? "STUMM (Haende an Ohren)" : "Aktiv (Haende an Ohren)";
+
+        return TextSanitizer.ToSafeAscii($"Sound (E): {soundStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if (State.IsInProximity) return new Scalar(0, 140, 255);
+        if (State.IsSpeakerMuted) return new Scalar(0, 0, 255);
+        return new Scalar(0, 255, 120);
+    }
 }
+

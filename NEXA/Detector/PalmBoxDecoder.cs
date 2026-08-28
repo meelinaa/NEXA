@@ -28,8 +28,8 @@ public static class PalmBoxDecoder
     /// <param name="inputHeight">Model input tensor height (192).</param>
     /// <returns>A list of filtered and decoded <see cref="PalmDetectionResult"/> objects.</returns>
     public static List<PalmDetectionResult> Decode(
-        float[] boxData,
-        float[] scoreData,
+        ReadOnlySpan<float> boxData,
+        ReadOnlySpan<float> scoreData,
         float[][] anchors,
         float scoreThreshold,
         float nmsThreshold,

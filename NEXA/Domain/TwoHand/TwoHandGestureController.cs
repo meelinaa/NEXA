@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -12,7 +14,7 @@ namespace NEXA.Domain.TwoHand;
 /// <b>What it is:</b> The high-level application coordinator managing detection, command execution, and visual rendering for multi-hand interactions.
 /// </para>
 /// </summary>
-public class TwoHandGestureController
+public class TwoHandGestureController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly TwoHandActionExecutor _actionExecutor;
@@ -82,6 +84,12 @@ public class TwoHandGestureController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.TrackedHands, context.FrameWidth, context.FrameHeight);
+    }
+
     /// <summary>
     /// Renders visual feedback (3.0s window countdown badge, camera viewfinder brackets, white flash, and action animations) onto the camera frame.
     /// </summary>
@@ -91,4 +99,45 @@ public class TwoHandGestureController
     {
         _renderer.Render(frame, State, _inputSink, hands);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.TrackedHands);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string twoHandStatus;
+        if (!Enabled)
+            twoHandStatus = "AUS (Taste T)";
+        else if ((DateTime.Now - State.LastMediaPlayPauseTime).TotalMilliseconds < 1500)
+            twoHandStatus = "> || PLAY / PAUSE gesendet!";
+        else if (State.IsCameraFrameActive)
+            twoHandStatus = "Kamera-Rahmen (2s Zusammenhalten)";
+        else if ((DateTime.Now - State.LastScreenshotTime).TotalMilliseconds < 1500)
+            twoHandStatus = "Screenshot gespeichert & kopiert!";
+        else if (State.InCooldown)
+            twoHandStatus = $"Cooldown ({State.LastAction})";
+        else if (State.IsWindowActive)
+            twoHandStatus = $"Fenster ({State.RemainingWindowSeconds:F1}s)";
+        else
+            twoHandStatus = "Bereit (Klatsch >|| / Doppel-L / Faust)";
+
+        return TextSanitizer.ToSafeAscii($"Zwei-Hand (T): {twoHandStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if ((DateTime.Now - State.LastMediaPlayPauseTime).TotalMilliseconds < 1500) return new Scalar(0, 220, 255);
+        if (State.IsCameraFrameActive) return new Scalar(0, 255, 120);
+        if ((DateTime.Now - State.LastScreenshotTime).TotalMilliseconds < 1500) return new Scalar(255, 255, 255);
+        if (State.InCooldown) return new Scalar(0, 180, 255);
+        if (State.IsWindowActive) return new Scalar(0, 255, 120);
+        return new Scalar(120, 120, 120);
+    }
 }
+

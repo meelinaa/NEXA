@@ -29,7 +29,7 @@ public class MonitorThrowState
     /// <summary>
     /// Timestamp of when the most recent monitor throw gesture was dispatched.
     /// </summary>
-    public DateTime LastSwipeTime { get; set; } = DateTime.MinValue;
+    public DateTime LastSwipeTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// Indicates whether the detector is currently in the post-throw cooldown period.
@@ -39,12 +39,12 @@ public class MonitorThrowState
     /// <summary>
     /// Gets or sets a value indicating whether the tracked hand is currently held in an edge-on ("Knife Hand") posture.
     /// </summary>
-    public bool IsEdgeOnPosture { get; set; } = false;
+    public bool IsEdgeOnPosture { get; internal set; } = false;
 
     /// <summary>
     /// The ratio between knuckle distance (Index MCP [5] to Pinky MCP [17]) and palm size (Wrist [0] to Middle MCP [9]).
     /// </summary>
-    public double KnuckleCompressionRatio { get; set; } = 1.0;
+    public double KnuckleCompressionRatio { get; internal set; } = 1.0;
 
     /// <summary>
     /// Sliding window queue of timestamped palm positions for horizontal velocity regression.
@@ -54,15 +54,15 @@ public class MonitorThrowState
     /// <summary>
     /// Direction string ("LEFT" or "RIGHT") of the most recently executed monitor throw.
     /// </summary>
-    public string LastDirection { get; set; } = string.Empty;
+    public string LastDirection { get; internal set; } = string.Empty;
 
     /// <summary>
     /// Timestamp of the last executed monitor throw for floating holographic arrow rendering.
     /// </summary>
-    public DateTime LastFeedbackTime { get; set; } = DateTime.MinValue;
+    public DateTime LastFeedbackTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
     /// 2D image coordinates of the palm center where the throw animation originates.
     /// </summary>
-    public Point2f LastSwipeCenter { get; set; }
+    public Point2f LastSwipeCenter { get; internal set; }
 }

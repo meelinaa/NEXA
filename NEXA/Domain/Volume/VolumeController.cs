@@ -1,5 +1,6 @@
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -11,7 +12,7 @@ namespace NEXA.Domain.Volume;
 /// <b>What it is:</b> The controller managing audio level manipulation via hand tilt.
 /// </para>
 /// </summary>
-public class VolumeController
+public class VolumeController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IAudioSink _audioSink;
     private readonly VolumeFeedbackRenderer _renderer;
@@ -64,6 +65,12 @@ public class VolumeController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.PrimaryHand);
+    }
+
     /// <summary>
     /// Renders augmented-reality rotary gauge visuals and live volume percentages onto the camera frame.
     /// </summary>
@@ -72,4 +79,29 @@ public class VolumeController
     {
         _renderer.Render(frame, State);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string volStatus;
+        if (!Enabled)
+            volStatus = "AUS (Taste V)";
+        else if (State.IsActive)
+            volStatus = $"Aktiv: {(int)(State.SmoothedVolume * 100)}% ({State.AngleDelta:+0;-0;0} deg)";
+        else
+            volStatus = "Bereit (L-Geste + Drehung)";
+
+        return TextSanitizer.ToSafeAscii($"Lautstaerke (V): {volStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor() =>
+        Enabled ? new Scalar(0, 255, 120) : new Scalar(160, 160, 160);
 }
+

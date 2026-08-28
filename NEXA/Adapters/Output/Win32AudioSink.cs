@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using NEXA.Abstractions;
+using Serilog;
 
 namespace NEXA.Adapters.Output;
 
@@ -18,6 +19,8 @@ namespace NEXA.Adapters.Output;
 /// </summary>
 public class Win32AudioSink : IAudioSink
 {
+    private static readonly ILogger _log = Log.ForContext<Win32AudioSink>();
+
     private IAudioEndpointVolume? _endpointVolume = null;
     private IAudioEndpointVolume? _micEndpointVolume = null;
     private float _cachedVolume = 0.5f;
@@ -68,9 +71,16 @@ public class Win32AudioSink : IAudioSink
                 }
             }
         }
-        catch
+        catch (COMException ex)
         {
             // Graceful fallback in environments without physical audio hardware (e.g. CI/virtual test runners)
+            _log.Warning(ex, "CoreAudio endpoint initialization failed (HRESULT {HResult:#010X}). Falling back to cached values.", ex.HResult);
+            _endpointVolume = null;
+            _micEndpointVolume = null;
+        }
+        catch (InvalidCastException ex)
+        {
+            _log.Warning(ex, "CoreAudio COM activation succeeded but interface cast failed. Audio control unavailable.");
             _endpointVolume = null;
             _micEndpointVolume = null;
         }
@@ -87,8 +97,9 @@ public class Win32AudioSink : IAudioSink
                 _cachedVolume = level;
                 return level;
             }
-            catch
+            catch (COMException ex)
             {
+                _log.Warning(ex, "GetMasterVolumeLevelScalar failed (HRESULT {HResult:#010X}). Re-initializing endpoint.", ex.HResult);
                 TryInitializeAudioEndpoint();
             }
         }
@@ -108,8 +119,9 @@ public class Win32AudioSink : IAudioSink
                 Guid emptyContext = Guid.Empty;
                 _endpointVolume.SetMasterVolumeLevelScalar(clamped, ref emptyContext);
             }
-            catch
+            catch (COMException ex)
             {
+                _log.Warning(ex, "SetMasterVolumeLevelScalar({Volume:F2}) failed (HRESULT {HResult:#010X}). Re-initializing endpoint.", clamped, ex.HResult);
                 TryInitializeAudioEndpoint();
             }
         }
@@ -126,8 +138,9 @@ public class Win32AudioSink : IAudioSink
                 Guid emptyContext = Guid.Empty;
                 _endpointVolume.SetMute(isMuted, ref emptyContext);
             }
-            catch
+            catch (COMException ex)
             {
+                _log.Warning(ex, "SetMute({IsMuted}) failed (HRESULT {HResult:#010X}). Re-initializing endpoint.", isMuted, ex.HResult);
                 TryInitializeAudioEndpoint();
             }
         }
@@ -144,8 +157,9 @@ public class Win32AudioSink : IAudioSink
                 _cachedMute = isMuted;
                 return isMuted;
             }
-            catch
+            catch (COMException ex)
             {
+                _log.Warning(ex, "GetMute failed (HRESULT {HResult:#010X}). Re-initializing endpoint.", ex.HResult);
                 TryInitializeAudioEndpoint();
             }
         }
@@ -170,8 +184,9 @@ public class Win32AudioSink : IAudioSink
                 Guid emptyContext = Guid.Empty;
                 _micEndpointVolume.SetMute(isMuted, ref emptyContext);
             }
-            catch
+            catch (COMException ex)
             {
+                _log.Warning(ex, "SetMicrophoneMute({IsMuted}) failed (HRESULT {HResult:#010X}). Re-initializing endpoint.", isMuted, ex.HResult);
                 TryInitializeAudioEndpoint();
             }
         }
@@ -188,8 +203,9 @@ public class Win32AudioSink : IAudioSink
                 _cachedMicMute = isMuted;
                 return isMuted;
             }
-            catch
+            catch (COMException ex)
             {
+                _log.Warning(ex, "GetMicrophoneMute failed (HRESULT {HResult:#010X}). Re-initializing endpoint.", ex.HResult);
                 TryInitializeAudioEndpoint();
             }
         }

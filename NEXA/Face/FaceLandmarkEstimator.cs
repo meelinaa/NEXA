@@ -23,12 +23,19 @@ public class FaceLandmarkEstimator : IDisposable
     private readonly float _confThreshold;
     private const int InputSize = 192;
 
+    // Zero-allocation reusable OpenCV matrices, inverse transformation matrices, and tensor buffer
+    private readonly Mat _warpedMat = new();
+    private readonly Mat _rgbMat = new();
+    private readonly Mat _invRotMat = new();
+    private readonly DenseTensor<float> _inputTensor = new([1, 3, InputSize, InputSize]);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="FaceLandmarkEstimator"/> class.
     /// </summary>
     /// <param name="modelPath">File path to face_mesh.onnx.</param>
     /// <param name="confThreshold">Minimum confidence score threshold (default: 0.5f).</param>
-    public FaceLandmarkEstimator(string modelPath, float confThreshold = 0.5f)
+    /// <param name="enableGpu">Whether to attempt DirectML GPU hardware acceleration with automatic CPU fallback.</param>
+    public FaceLandmarkEstimator(string modelPath, float confThreshold = 0.5f, bool enableGpu = true)
     {
         _confThreshold = confThreshold;
 
@@ -37,6 +44,18 @@ public class FaceLandmarkEstimator : IDisposable
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
         };
+
+        if (enableGpu)
+        {
+            try
+            {
+                options.AppendExecutionProvider_DML(0);
+            }
+            catch
+            {
+                // Graceful fallback to CPU Execution Provider
+            }
+        }
 
         _session = new InferenceSession(modelPath, options);
     }
@@ -79,28 +98,23 @@ public class FaceLandmarkEstimator : IDisposable
         rotMat.Set(0, 2, rotMat.At<double>(0, 2) - centerX + InputSize / 2.0);
         rotMat.Set(1, 2, rotMat.At<double>(1, 2) - centerY + InputSize / 2.0);
 
-        using Mat warped = new();
-        Cv2.WarpAffine(image, warped, rotMat, new Size(InputSize, InputSize), InterpolationFlags.Linear, BorderTypes.Constant, Scalar.All(0));
+        Cv2.WarpAffine(image, _warpedMat, rotMat, new Size(InputSize, InputSize), InterpolationFlags.Linear, BorderTypes.Constant, Scalar.All(0));
+        Cv2.CvtColor(_warpedMat, _rgbMat, ColorConversionCodes.BGR2RGB);
 
-        using Mat rgb = new();
-        Cv2.CvtColor(warped, rgb, ColorConversionCodes.BGR2RGB);
-
-        // 3. Populate NCHW Tensor [1, 3, 192, 192]
-        DenseTensor<float> tensor = new([1, 3, InputSize, InputSize]);
-
+        // 3. Populate NCHW Tensor [1, 3, 192, 192] without heap allocations
         unsafe
         {
-            byte* ptr = (byte*)rgb.Data.ToPointer();
-            int step = (int)rgb.Step();
+            byte* ptr = (byte*)_rgbMat.Data.ToPointer();
+            int step = (int)_rgbMat.Step();
 
             for (int y = 0; y < InputSize; y++)
             {
                 byte* row = ptr + y * step;
                 for (int x = 0; x < InputSize; x++)
                 {
-                    tensor[0, 0, y, x] = row[x * 3 + 0] / 255.0f;
-                    tensor[0, 1, y, x] = row[x * 3 + 1] / 255.0f;
-                    tensor[0, 2, y, x] = row[x * 3 + 2] / 255.0f;
+                    _inputTensor[0, 0, y, x] = row[x * 3 + 0] / 255.0f;
+                    _inputTensor[0, 1, y, x] = row[x * 3 + 1] / 255.0f;
+                    _inputTensor[0, 2, y, x] = row[x * 3 + 2] / 255.0f;
                 }
             }
         }
@@ -108,26 +122,25 @@ public class FaceLandmarkEstimator : IDisposable
         // 4. Run ONNX Inference
         List<NamedOnnxValue> inputs =
         [
-            NamedOnnxValue.CreateFromTensor("input", tensor)
+            NamedOnnxValue.CreateFromTensor("input", _inputTensor)
         ];
 
         using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
 
-        float[] rawLandmarks = [];
+        ReadOnlySpan<float> rawLandmarks = default;
         float score = 0f;
 
         foreach (NamedOnnxValue output in outputs)
         {
-            if (output.Name == "landmarks")
+            if (output.Value is DenseTensor<float> tensor)
             {
-                rawLandmarks = output.AsEnumerable<float>().ToArray();
-            }
-            else if (output.Name == "score")
-            {
-                float[] scoreArr = output.AsEnumerable<float>().ToArray();
-                if (scoreArr.Length > 0)
+                if (output.Name == "landmarks")
                 {
-                    score = scoreArr[0];
+                    rawLandmarks = tensor.Buffer.Span;
+                }
+                else if (output.Name == "score")
+                {
+                    score = tensor.Buffer.Span.Length > 0 ? tensor.Buffer.Span[0] : 0f;
                 }
             }
         }
@@ -137,15 +150,14 @@ public class FaceLandmarkEstimator : IDisposable
             return null;
 
         // 5. Invert Affine Transform to unproject landmarks back to original camera pixel coordinates
-        using Mat invRotMat = new();
-        Cv2.InvertAffineTransform(rotMat, invRotMat);
+        Cv2.InvertAffineTransform(rotMat, _invRotMat);
 
-        double m00 = invRotMat.At<double>(0, 0);
-        double m01 = invRotMat.At<double>(0, 1);
-        double m02 = invRotMat.At<double>(0, 2);
-        double m10 = invRotMat.At<double>(1, 0);
-        double m11 = invRotMat.At<double>(1, 1);
-        double m12 = invRotMat.At<double>(1, 2);
+        double m00 = _invRotMat.At<double>(0, 0);
+        double m01 = _invRotMat.At<double>(0, 1);
+        double m02 = _invRotMat.At<double>(0, 2);
+        double m10 = _invRotMat.At<double>(1, 0);
+        double m11 = _invRotMat.At<double>(1, 1);
+        double m12 = _invRotMat.At<double>(1, 2);
 
         Point2f[] landmarks = new Point2f[468];
         for (int i = 0; i < 468; i++)
@@ -163,10 +175,32 @@ public class FaceLandmarkEstimator : IDisposable
     }
 
     /// <summary>
-    /// Disposes ONNX session resources.
+    /// Pre-warms the ONNX landmark inference session and compiles DirectML shaders.
+    /// </summary>
+    public void WarmUp()
+    {
+        try
+        {
+            List<NamedOnnxValue> inputs =
+            [
+                NamedOnnxValue.CreateFromTensor("input", _inputTensor)
+            ];
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs);
+        }
+        catch
+        {
+            // Warm-up exceptions ignored
+        }
+    }
+
+    /// <summary>
+    /// Disposes ONNX session resources and pre-allocated OpenCV matrices.
     /// </summary>
     public void Dispose()
     {
+        _warpedMat.Dispose();
+        _rgbMat.Dispose();
+        _invRotMat.Dispose();
         _session?.Dispose();
         GC.SuppressFinalize(this);
     }

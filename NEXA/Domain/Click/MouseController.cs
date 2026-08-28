@@ -12,7 +12,7 @@ namespace NEXA.Domain.Click;
 /// <b>What it is:</b> The controller responsible for moving the Windows mouse cursor and issuing left clicks based on hand gestures.
 /// </para>
 /// </summary>
-public class MouseController
+public class MouseController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IInputSink _inputSink;
     private readonly MouseFeedbackRenderer _renderer;
@@ -79,6 +79,12 @@ public class MouseController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.PrimaryHand, context.FrameWidth, context.FrameHeight);
+    }
+
     /// <summary>
     /// Renders visual feedback (radial charging arc and click ripple flash) onto the camera frame.
     /// </summary>
@@ -88,4 +94,26 @@ public class MouseController
     {
         _renderer.Render(frame, hand, DwellState, Detector.LastClickPosition);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.PrimaryHand);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string mouseStatus = Enabled
+            ? (DwellState.IsHovering && DwellState.HoverProgress > 0.05
+                ? $"Verweilklick: {(int)(DwellState.HoverProgress * 100)}%"
+                : "Aktiv (Zeigen)")
+            : "AUS (Taste C)";
+        return $"Maus (C): {mouseStatus}";
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor() =>
+        Enabled ? new Scalar(0, 255, 120) : new Scalar(160, 160, 160);
 }
+

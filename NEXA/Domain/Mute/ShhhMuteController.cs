@@ -1,5 +1,6 @@
 using NEXA.Abstractions;
 using NEXA.Adapters.Output;
+using NEXA.Common;
 using NEXA.Face;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -12,7 +13,7 @@ namespace NEXA.Domain.Mute;
 /// <b>What it is:</b> The controller executing microphone input mute toggles when the user places 4 fingers in front of their mouth.
 /// </para>
 /// </summary>
-public class ShhhMuteController
+public class ShhhMuteController : IHudStatusProvider, IFrameProcessor
 {
     private readonly IAudioSink _audioSink;
     private readonly ShhhMuteRenderer _renderer;
@@ -67,6 +68,12 @@ public class ShhhMuteController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.PrimaryHand, context.PrimaryFace);
+    }
+
     /// <summary>
     /// Renders visual mouth reticles, charging hold progress rings, and microphone mute alert banners onto the camera frame.
     /// </summary>
@@ -77,4 +84,33 @@ public class ShhhMuteController
     {
         _renderer.Render(frame, face, hand, State, Enabled);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        RenderFeedback(context.Frame, context.PrimaryFace, context.PrimaryHand);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string muteStatus;
+        if (!Enabled)
+            muteStatus = "AUS (Taste X)";
+        else if (State.IsInProximity)
+            muteStatus = $"Muten: {(int)(State.HoldProgress * 100)}%";
+        else
+            muteStatus = State.IsMuted ? "STUMM (4 Finger vor Mund)" : "Aktiv (4 Finger vor Mund)";
+
+        return TextSanitizer.ToSafeAscii($"Mikro (X): {muteStatus}");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor()
+    {
+        if (!Enabled) return new Scalar(160, 160, 160);
+        if (State.IsInProximity || State.IsMuted) return new Scalar(0, 0, 255);
+        return new Scalar(0, 255, 120);
+    }
 }
+

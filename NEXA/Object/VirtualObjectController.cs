@@ -1,3 +1,5 @@
+using NEXA.Abstractions;
+using NEXA.Common;
 using NEXA.Domain.Grab;
 using NEXA.Hand;
 using OpenCvSharp;
@@ -10,7 +12,7 @@ namespace NEXA.Object;
 /// <b>What it is:</b> An augmented-reality spatial interaction coordinator managing dragging, zooming, and viewport rendering.
 /// </para>
 /// </summary>
-public class VirtualObjectController
+public class VirtualObjectController : IHudStatusProvider, IFrameProcessor
 {
     private readonly VirtualObjectGrabEngine _grabEngine;
     private readonly WindowResizeDetector _resizeDetector;
@@ -90,6 +92,12 @@ public class VirtualObjectController
         }
     }
 
+    /// <inheritdoc/>
+    public void Process(FrameContext context)
+    {
+        Update(context.PrimaryHand, context.FrameWidth, context.FrameHeight);
+    }
+
     /// <summary>
     /// Resets the object to its default initial spawn position and 1.0x scale factor.
     /// </summary>
@@ -111,4 +119,21 @@ public class VirtualObjectController
     {
         _renderer.Render(frame, TargetObject, GrabState, _resizeDetector.State);
     }
+
+    /// <inheritdoc/>
+    public void Render(FrameContext context)
+    {
+        Render(context.Frame);
+    }
+
+    /// <inheritdoc/>
+    public string GetStatusText()
+    {
+        string grabLabel = GrabState.Active ? "GRABBED" : (GrabState.HoldDurationSeconds > 0 ? $"HOLD {GrabState.HoldDurationSeconds:F1}s" : "Ready");
+        return TextSanitizer.ToSafeAscii($"Testobjekt: {grabLabel} | Zoom: {CurrentScale:F2}x (R)");
+    }
+
+    /// <inheritdoc/>
+    public Scalar GetStatusColor() => new(200, 200, 200);
 }
+
