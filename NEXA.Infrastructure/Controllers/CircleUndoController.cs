@@ -70,10 +70,23 @@ public class CircleUndoController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("CircleUndo"))
+        {
+            return;
+        }
+
         Update(context.PrimaryHand);
+
+        if (State.IsActive)
+        {
+            context.Arbitrator?.TryAcquire("CircleUndo");
+        }
+        else
+        {
+            context.Arbitrator?.Release("CircleUndo");
+        }
     }
 
     /// <summary>

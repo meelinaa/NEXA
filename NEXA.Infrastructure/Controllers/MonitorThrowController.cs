@@ -65,10 +65,23 @@ public class MonitorThrowController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("MonitorThrow"))
+        {
+            return;
+        }
+
         Update(context.PrimaryHand);
+
+        if (State.IsEdgeOnPosture || State.InCooldown)
+        {
+            context.Arbitrator?.TryAcquire("MonitorThrow");
+        }
+        else
+        {
+            context.Arbitrator?.Release("MonitorThrow");
+        }
     }
 
     /// <summary>

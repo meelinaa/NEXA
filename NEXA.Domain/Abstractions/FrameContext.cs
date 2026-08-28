@@ -44,13 +44,23 @@ public class FrameContext
     public int FrameHeight => Frame.Height;
 
     /// <summary>
+    /// Gets the gesture arbitrator enforcing exclusive gesture execution.
+    /// </summary>
+    public IGestureArbitrator? Arbitrator { get; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="FrameContext"/> class.
     /// </summary>
-    public FrameContext(Mat frame, List<TrackedHand> trackedHands, TrackedFace? primaryFace)
+    public FrameContext(
+        Mat frame,
+        List<TrackedHand> trackedHands,
+        TrackedFace? primaryFace,
+        IGestureArbitrator? arbitrator = null)
     {
         Frame = frame;
         TrackedHands = trackedHands;
         PrimaryHand = trackedHands.Count > 0 ? trackedHands[0] : null;
         PrimaryFace = primaryFace;
+        Arbitrator = arbitrator;
     }
 }

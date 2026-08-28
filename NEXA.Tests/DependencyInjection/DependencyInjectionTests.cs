@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using NEXA.Abstractions;
+using NEXA.Adapters.Capture;
 using NEXA.Adapters.Output;
 using NEXA.Application;
 using NEXA.DependencyInjection;
@@ -91,7 +92,18 @@ public class DependencyInjectionTests
         VirtualObjectController virtualObject = provider.GetRequiredService<VirtualObjectController>();
         Assert.NotNull(virtualObject);
 
-        // 4. Verify Command Handler
+        // 4. Verify Frame Sources & Engine
+        SwitchableFrameSource switchableSource = provider.GetRequiredService<SwitchableFrameSource>();
+        Assert.NotNull(switchableSource);
+
+        IFrameSource frameSource = provider.GetRequiredService<IFrameSource>();
+        Assert.NotNull(frameSource);
+        Assert.Same(switchableSource, frameSource);
+
+        NexaEngine engine = provider.GetRequiredService<NexaEngine>();
+        Assert.NotNull(engine);
+
+        // 5. Verify Command Handler
         KeyboardCommandHandler commandHandler = provider.GetRequiredService<KeyboardCommandHandler>();
         Assert.NotNull(commandHandler);
     }

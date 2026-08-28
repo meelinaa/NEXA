@@ -104,4 +104,19 @@ public class SwipeState
     /// Minimum momentum velocity cutoff below which virtual coasting stops completely.
     /// </summary>
     public const double MinMomentumVelocity = 3.0;
+
+    /// <summary>
+    /// Indicates whether the swipe detector is currently in refractory cooldown.
+    /// </summary>
+    public bool InCooldown => (DateTime.Now - LastSwipeTime) < Cooldown;
+
+    /// <summary>
+    /// Indicates whether inertial momentum coasting is actively generating scroll ticks.
+    /// </summary>
+    public bool HasActiveMomentum => Math.Abs(MomentumVelocity) >= MinMomentumVelocity;
+
+    /// <summary>
+    /// Indicates whether a swipe interaction or momentum coasting is currently active.
+    /// </summary>
+    public bool IsSwiping => WaitingForRest || InCooldown || HasActiveMomentum;
 }

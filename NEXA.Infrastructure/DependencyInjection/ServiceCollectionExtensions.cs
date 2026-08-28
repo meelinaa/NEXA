@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         // 0. Configuration & Pipeline Channels
         services.AddSingleton<NexaConfiguration>();
         services.AddSingleton<FrameProcessingPipeline>();
+        services.AddSingleton<IGestureArbitrator, NEXA.Domain.Common.GestureArbitrator>();
 
         // 1. Output Sinks & Interop Adapters
         services.AddSingleton<IInputSink, Win32InputSink>();
@@ -61,7 +62,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sp => (Win32InputSink)sp.GetRequiredService<IInputSink>());
         services.AddSingleton(sp => (Win32AudioSink)sp.GetRequiredService<IAudioSink>());
         services.AddSingleton(sp => (Win32ScreenshotSink)sp.GetRequiredService<IScreenshotSink>());
-        services.AddSingleton(sp => sp.GetRequiredService<SwitchableFrameSource>().WebcamSource);
         services.AddSingleton(sp => (OpenCvDisplaySink)sp.GetRequiredService<IDisplaySink>());
         services.AddSingleton(sp => (OpenCvKeyboardEventSource)sp.GetRequiredService<IKeyboardEventSource>());
 
@@ -153,7 +153,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IFrameSource>(),
                 sp.GetRequiredService<IDisplaySink>(),
                 sp.GetRequiredService<IKeyboardEventSource>(),
-                sp.GetRequiredService<IVisionPipeline>()
+                sp.GetRequiredService<IVisionPipeline>(),
+                sp.GetRequiredService<IGestureArbitrator>()
             );
         });
 

@@ -37,7 +37,8 @@ public class ShhhMuteDetector
     /// </summary>
     public ShhhMuteDetector()
     {
-        State.RequiredHoldSeconds = 0.35;
+        State.RequiredHoldSeconds = 2.0;
+        State.CooldownSeconds = 5.0;
     }
 
     /// <summary>

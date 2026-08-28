@@ -60,6 +60,11 @@ public class TrackedHand
     public Rect2f BoundingBox => RawResult.BoundingBox;
 
     /// <summary>
+    /// Gets the estimated 2D pixel coordinate of the palm center (middle knuckle joint index 9).
+    /// </summary>
+    public Point2f PalmCenter => SmoothedLandmarks2D.Length > 9 ? SmoothedLandmarks2D[9] : default;
+
+    /// <summary>
     /// Computes the 2D Euclidean pixel distance between two smoothed landmark joints.
     /// </summary>
     /// <param name="idx1">Index of the first landmark (0 to 20).</param>

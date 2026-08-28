@@ -68,10 +68,24 @@ public class ShhhMuteController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("ShhhMute"))
+        {
+            State.Reset();
+            return;
+        }
+
         Update(context.PrimaryHand, context.PrimaryFace);
+
+        if (State.IsInProximity || State.HoldTimer.IsRunning)
+        {
+            context.Arbitrator?.TryAcquire("ShhhMute");
+        }
+        else
+        {
+            context.Arbitrator?.Release("ShhhMute");
+        }
     }
 
     /// <summary>

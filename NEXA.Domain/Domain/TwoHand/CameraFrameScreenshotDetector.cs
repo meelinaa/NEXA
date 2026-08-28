@@ -44,12 +44,18 @@ public class CameraFrameScreenshotDetector
 
             double distIndex = Math.Sqrt(Math.Pow(index1.X - index2.X, 2) + Math.Pow(index1.Y - index2.Y, 2));
             double distThumb = Math.Sqrt(Math.Pow(thumb1.X - thumb2.X, 2) + Math.Pow(thumb1.Y - thumb2.Y, 2));
-            double touchThreshold = avgPalmSize * 0.45;
+            double distIndex1Thumb2 = Math.Sqrt(Math.Pow(index1.X - thumb2.X, 2) + Math.Pow(index1.Y - thumb2.Y, 2));
+            double distThumb1Index2 = Math.Sqrt(Math.Pow(thumb1.X - index2.X, 2) + Math.Pow(thumb1.Y - index2.Y, 2));
 
-            bool isIndexTouching = distIndex <= touchThreshold;
-            bool isThumbTouching = distThumb <= touchThreshold;
+            // Forgiving touch threshold (~75-90px) accommodating natural finger gap distances
+            double touchThreshold = Math.Max(75.0, avgPalmSize * 0.75);
 
-            if (!state.IsScreenshotBlocked && isIndexTouching && isThumbTouching)
+            // Accept any valid framing contact (Index-Index & Thumb-Thumb OR Index-Thumb & Thumb-Index OR direct fingertip touch)
+            bool isTouching = (distIndex <= touchThreshold && distThumb <= touchThreshold) ||
+                              (distIndex1Thumb2 <= touchThreshold && distThumb1Index2 <= touchThreshold) ||
+                              (distIndex <= touchThreshold || distThumb <= touchThreshold || distIndex1Thumb2 <= touchThreshold || distThumb1Index2 <= touchThreshold);
+
+            if (!state.IsScreenshotBlocked && isTouching)
             {
                 if (!state.ScreenshotHoldTimer.IsRunning)
                 {
@@ -98,6 +104,8 @@ public class CameraFrameScreenshotDetector
     /// </summary>
     public static bool IsLPosture(TrackedHand hand)
     {
+        if (hand.Gesture == "L") return true;
+
         Point2f p2 = hand.SmoothedLandmarks2D[2];
         Point2f p4 = hand.SmoothedLandmarks2D[4];
         Point2f p5 = hand.SmoothedLandmarks2D[5];
@@ -112,28 +120,25 @@ public class CameraFrameScreenshotDetector
         double cosAngle = dot / Math.Max(1e-5, magThumb * magIndex);
         double angleDeg = Math.Acos(Math.Clamp(cosAngle, -1.0, 1.0)) * 180.0 / Math.PI;
 
-        bool isAngleL = angleDeg is >= 48.0 and <= 135.0;
+        bool isAngleL = angleDeg is >= 38.0 and <= 145.0;
 
         double distThumb0 = hand.Distance(4, 0);
         double distThumb2 = hand.Distance(2, 0);
         double distIndex0 = hand.Distance(8, 0);
         double distIndex5 = hand.Distance(5, 0);
 
-        bool isThumbExtended = distThumb0 > distThumb2 * 1.05;
-        bool isIndexExtended = distIndex0 > distIndex5 * 1.10;
+        bool isThumbExtended = distThumb0 > distThumb2 * 0.95;
+        bool isIndexExtended = distIndex0 > distIndex5 * 1.05;
 
-        double distMiddle0 = hand.Distance(12, 0);
-        double distMiddle9 = hand.Distance(9, 0);
+        // Ring and Pinky should not be fully extended like open palm
         double distRing0 = hand.Distance(16, 0);
         double distRing13 = hand.Distance(13, 0);
         double distPinky0 = hand.Distance(20, 0);
         double distPinky17 = hand.Distance(17, 0);
 
-        bool isMiddleCurled = distMiddle0 < distMiddle9 * 1.25;
-        bool isRingCurled = distRing0 < distRing13 * 1.25;
-        bool isPinkyCurled = distPinky0 < distPinky17 * 1.25;
+        bool ringExt = distRing0 > distRing13 * 1.25;
+        bool pinkyExt = distPinky0 > distPinky17 * 1.25;
 
-        return (hand.Gesture == "L" || (isAngleL && isThumbExtended && isIndexExtended)) &&
-               isMiddleCurled && isRingCurled && isPinkyCurled;
+        return (isAngleL && isThumbExtended && isIndexExtended) && (!ringExt || !pinkyExt);
     }
 }

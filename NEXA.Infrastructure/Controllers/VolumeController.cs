@@ -65,10 +65,34 @@ public class VolumeController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        // Rule: Volume adjustment is strictly single-hand. If 2 or more hands are visible, volume cannot be adjusted!
+        if (context.TrackedHands.Count != 1)
+        {
+            if (State.IsActive)
+            {
+                Detector.Reset();
+                context.Arbitrator?.Release("Volume");
+            }
+            return;
+        }
+
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("Volume"))
+        {
+            return;
+        }
+
         Update(context.PrimaryHand);
+
+        if (State.IsActive)
+        {
+            context.Arbitrator?.TryAcquire("Volume");
+        }
+        else
+        {
+            context.Arbitrator?.Release("Volume");
+        }
     }
 
     /// <summary>

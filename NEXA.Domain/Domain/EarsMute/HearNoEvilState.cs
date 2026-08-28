@@ -22,9 +22,9 @@ public class HearNoEvilState
     public double HoldDurationSeconds { get; internal set; }
 
     /// <summary>
-    /// Required hold duration in seconds before triggering mute (0.35s, identical to microphone mute).
+    /// Required hold duration in seconds before triggering mute (2.0s confirmation hold).
     /// </summary>
-    public double RequiredHoldSeconds { get; internal set; } = 0.35;
+    public double RequiredHoldSeconds { get; internal set; } = 2.0;
 
     /// <summary>
     /// Normalized hold progress ratio [0.0 to 1.0].
@@ -42,9 +42,14 @@ public class HearNoEvilState
     public DateTime LastToggleTime { get; internal set; } = DateTime.MinValue;
 
     /// <summary>
-    /// Gets a value indicating whether the detector is in refractory cooldown (1.5s) to eliminate toggle flicker.
+    /// Enforced refractory cooldown duration in seconds (5.0s) between mute and unmute transitions.
     /// </summary>
-    public bool InCooldown => (DateTime.Now - LastToggleTime).TotalSeconds < 1.5;
+    public double CooldownSeconds { get; internal set; } = 5.0;
+
+    /// <summary>
+    /// Gets a value indicating whether the detector is in refractory cooldown (5.0s) to prevent rapid toggle flickering.
+    /// </summary>
+    public bool InCooldown => (DateTime.Now - LastToggleTime).TotalSeconds < CooldownSeconds;
 
     /// <summary>
     /// Cached state indicating whether master speaker audio output is currently muted.

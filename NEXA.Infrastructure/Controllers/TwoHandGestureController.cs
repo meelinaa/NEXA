@@ -84,10 +84,33 @@ public class TwoHandGestureController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.TrackedHands.Count == 2)
+        {
+            TrackedHand h1 = context.TrackedHands[0];
+            TrackedHand h2 = context.TrackedHands[1];
+            if (CameraFrameScreenshotDetector.IsLPosture(h1) && CameraFrameScreenshotDetector.IsLPosture(h2))
+            {
+                context.Arbitrator?.TryAcquire("TwoHand", highPriority: true);
+            }
+        }
+
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("TwoHand"))
+        {
+            return;
+        }
+
         Update(context.TrackedHands, context.FrameWidth, context.FrameHeight);
+
+        if (State.IsCameraFrameActive || State.ScreenshotHoldDurationSeconds > 0 || State.ConsecutiveClapFrames > 0)
+        {
+            context.Arbitrator?.TryAcquire("TwoHand", highPriority: true);
+        }
+        else
+        {
+            context.Arbitrator?.Release("TwoHand");
+        }
     }
 
     /// <summary>

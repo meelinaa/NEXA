@@ -23,9 +23,9 @@ public class ShhhMuteState
     public Stopwatch HoldTimer { get; } = new();
 
     /// <summary>
-    /// Required hold duration in seconds (0.40s) to toggle mute.
+    /// Required hold duration in seconds (2.0s confirmation hold) to toggle mute.
     /// </summary>
-    public double RequiredHoldSeconds { get; internal set; } = 0.40;
+    public double RequiredHoldSeconds { get; internal set; } = 2.0;
 
     /// <summary>
     /// Current normalized hold progress from 0.0 (entered zone) to 1.0 (triggered).
@@ -38,14 +38,19 @@ public class ShhhMuteState
     public double CurrentDistanceToMouth { get; internal set; } = double.MaxValue;
 
     /// <summary>
-    /// Dedicated stopwatch enforcing a 1.5-second post-mute toggle cooldown.
+    /// Dedicated stopwatch enforcing a 5.0-second post-mute toggle cooldown.
     /// </summary>
     public Stopwatch CooldownTimer { get; } = new();
 
     /// <summary>
-    /// Indicates whether the detector is in refractory cooldown.
+    /// Enforced cooldown duration in seconds (5.0s).
     /// </summary>
-    public bool InCooldown => CooldownTimer.IsRunning && CooldownTimer.Elapsed.TotalSeconds < 1.5;
+    public double CooldownSeconds { get; internal set; } = 5.0;
+
+    /// <summary>
+    /// Indicates whether the detector is in refractory cooldown (5.0s).
+    /// </summary>
+    public bool InCooldown => CooldownTimer.IsRunning && CooldownTimer.Elapsed.TotalSeconds < CooldownSeconds;
 
     /// <summary>
     /// Timestamp of the last mute toggle event.

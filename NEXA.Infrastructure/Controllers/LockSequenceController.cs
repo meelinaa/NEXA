@@ -66,10 +66,24 @@ public class LockSequenceController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("LockSequence"))
+        {
+            State.Reset();
+            return;
+        }
+
         Update(context.TrackedHands);
+
+        if (State.CurrentStep != LockSequenceStep.Idle)
+        {
+            context.Arbitrator?.TryAcquire("LockSequence");
+        }
+        else
+        {
+            context.Arbitrator?.Release("LockSequence");
+        }
     }
 
     /// <summary>

@@ -94,8 +94,14 @@ public class DwellClickDetector(int screenWidth, int screenHeight)
         string currentGesture = hand.Gesture;
         Point2f indexTip = hand.SmoothedLandmarks2D[8]; // Landmark 8 = Index fingertip
 
-        // Pointer navigation is strictly active only during the "Pointing" gesture
-        if (currentGesture != "Pointing")
+        // Pointer navigation is active during Pointing, Pinch, or pointing-like hand poses
+        bool isPointing = currentGesture is "Pointing" or "Pinch" or "Pinch Closed" ||
+                         (hand.Distance(8, 0) > hand.Distance(6, 0) * 1.10 &&
+                          hand.Distance(16, 0) < hand.Distance(14, 0) * 1.30 &&
+                          hand.Distance(20, 0) < hand.Distance(18, 0) * 1.30 &&
+                          currentGesture != "L" && currentGesture != "Fist" && currentGesture != "Spock");
+
+        if (!isPointing)
         {
             ResetHover();
             return (null, null, false);

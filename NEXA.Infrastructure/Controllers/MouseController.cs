@@ -79,10 +79,38 @@ public class MouseController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        TrackedHand? hand = context.PrimaryHand;
+        bool isPointing = hand != null &&
+                         (hand.Gesture is "Pointing" or "Pinch" or "Pinch Closed" ||
+                          (hand.Distance(8, 0) > hand.Distance(6, 0) * 1.10 &&
+                           hand.Distance(16, 0) < hand.Distance(14, 0) * 1.30 &&
+                           hand.Distance(20, 0) < hand.Distance(18, 0) * 1.30 &&
+                           hand.Gesture != "L" && hand.Gesture != "Fist"));
+
+        if (isPointing)
+        {
+            // Pointing mouse navigation has TOP PRIORITY across the system
+            context.Arbitrator?.TryAcquire("Mouse", highPriority: true);
+        }
+
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("Mouse"))
+        {
+            DwellState.Reset();
+            return;
+        }
+
         Update(context.PrimaryHand, context.FrameWidth, context.FrameHeight);
+
+        if (isPointing || (DwellState.IsHovering && DwellState.HoverProgress > 0.01))
+        {
+            context.Arbitrator?.TryAcquire("Mouse", highPriority: true);
+        }
+        else
+        {
+            context.Arbitrator?.Release("Mouse");
+        }
     }
 
     /// <summary>

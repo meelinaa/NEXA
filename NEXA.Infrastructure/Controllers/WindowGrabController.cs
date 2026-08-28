@@ -158,10 +158,30 @@ public class WindowGrabController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("WindowGrab"))
+        {
+            if (_wasGrabbedLastFrame)
+            {
+                _resizeCoordinator.Reset();
+                OnFistReleased?.Invoke();
+                _wasGrabbedLastFrame = false;
+                _lastForegroundHwnd = IntPtr.Zero;
+            }
+            return;
+        }
+
         Update(context.TrackedHands, context.FrameWidth, context.FrameHeight);
+
+        if (State.IsGrabbed || ResizeState.IsActive)
+        {
+            context.Arbitrator?.TryAcquire("WindowGrab");
+        }
+        else
+        {
+            context.Arbitrator?.Release("WindowGrab");
+        }
     }
 
     /// <summary>

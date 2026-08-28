@@ -58,6 +58,11 @@ public class CircleUndoState
     public bool InCooldown => CooldownTimer.IsRunning && CooldownTimer.Elapsed.TotalSeconds < 1.0;
 
     /// <summary>
+    /// Indicates whether the wrist-twist undo/redo interaction is actively engaged.
+    /// </summary>
+    public bool IsActive => IsTracking || InCooldown;
+
+    /// <summary>
     /// Action label ("UNDO" or "REDO") of the most recently dispatched action.
     /// </summary>
     public string LastAction { get; internal set; } = string.Empty;

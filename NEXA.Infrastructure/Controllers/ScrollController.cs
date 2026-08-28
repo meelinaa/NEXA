@@ -96,11 +96,24 @@ public class ScrollController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("Scroll"))
+        {
+            return;
+        }
+
         UpdateMomentum();
         Update(context.PrimaryHand);
+
+        if (State.IsSwiping)
+        {
+            context.Arbitrator?.TryAcquire("Scroll");
+        }
+        else
+        {
+            context.Arbitrator?.Release("Scroll");
+        }
     }
 
     /// <summary>

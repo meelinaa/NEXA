@@ -92,10 +92,23 @@ public class VirtualObjectController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("VirtualObject"))
+        {
+            return;
+        }
+
         Update(context.PrimaryHand, context.FrameWidth, context.FrameHeight);
+
+        if (GrabState.Active || _resizeDetector.State.IsActive)
+        {
+            context.Arbitrator?.TryAcquire("VirtualObject");
+        }
+        else
+        {
+            context.Arbitrator?.Release("VirtualObject");
+        }
     }
 
     /// <summary>

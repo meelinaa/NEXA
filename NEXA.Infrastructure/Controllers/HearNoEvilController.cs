@@ -72,10 +72,24 @@ public class HearNoEvilController : IHudStatusProvider, IFrameProcessor
         }
     }
 
-    /// <inheritdoc/>
     public void Process(FrameContext context)
     {
+        if (context.Arbitrator != null && !context.Arbitrator.CanExecute("HearNoEvil"))
+        {
+            State.Reset();
+            return;
+        }
+
         Update(context.TrackedHands, context.PrimaryFace);
+
+        if (State.IsInProximity || State.HoldDurationSeconds > 0)
+        {
+            context.Arbitrator?.TryAcquire("HearNoEvil");
+        }
+        else
+        {
+            context.Arbitrator?.Release("HearNoEvil");
+        }
     }
 
     /// <summary>

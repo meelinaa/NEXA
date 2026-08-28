@@ -37,6 +37,7 @@ public class NexaEngine
     private readonly IDisplaySink _displaySink;
     private readonly IKeyboardEventSource _keyboardSource;
     private readonly IVisionPipeline _visionPipeline;
+    private readonly IGestureArbitrator _gestureArbitrator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NexaEngine"/> class.
@@ -55,6 +56,7 @@ public class NexaEngine
     /// <param name="displaySink">Optional display output (defaults to OpenCV window).</param>
     /// <param name="keyboardSource">Optional keyboard event source (defaults to OpenCV WaitKey).</param>
     /// <param name="visionPipeline">Optional asynchronous multi-model vision pipeline.</param>
+    /// <param name="gestureArbitrator">Optional gesture arbitrator enforcing mutual exclusion.</param>
     public NexaEngine(
         HandTracker tracker,
         FaceTracker faceTracker,
@@ -69,7 +71,8 @@ public class NexaEngine
         IFrameSource? frameSource = null,
         IDisplaySink? displaySink = null,
         IKeyboardEventSource? keyboardSource = null,
-        IVisionPipeline? visionPipeline = null)
+        IVisionPipeline? visionPipeline = null,
+        IGestureArbitrator? gestureArbitrator = null)
     {
         _tracker = tracker;
         _faceTracker = faceTracker;
@@ -85,6 +88,7 @@ public class NexaEngine
         _displaySink = displaySink ?? new OpenCvDisplaySink();
         _keyboardSource = keyboardSource ?? new OpenCvKeyboardEventSource();
         _visionPipeline = visionPipeline ?? new AsyncVisionPipeline(tracker, faceTracker);
+        _gestureArbitrator = gestureArbitrator ?? new NEXA.Domain.Common.GestureArbitrator();
     }
 
     /// <summary>
@@ -97,10 +101,28 @@ public class NexaEngine
 
         if (!_frameSource.Open(webcamIndex))
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"[ERROR] Could not open webcam (index {webcamIndex}). Please check your camera connection.");
-            Console.ResetColor();
-            return;
+            if (_frameSource is SwitchableFrameSource switchable)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"[INFO] Local USB webcam (index {webcamIndex}) not detected or unavailable.");
+                Console.WriteLine("[INFO] Falling back to Wireless Smartphone Camera Receiver (HTTP/WebRTC)...");
+                Console.ResetColor();
+
+                if (!switchable.SwitchMode(CameraSourceMode.SmartphoneStream))
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("[ERROR] Could not start smartphone camera receiver.");
+                    Console.ResetColor();
+                    return;
+                }
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"[ERROR] Could not open webcam (index {webcamIndex}). Please check your camera connection.");
+                Console.ResetColor();
+                return;
+            }
         }
 
         _frameSource.Set(VideoCaptureProperties.FrameWidth, 1280);
@@ -150,7 +172,7 @@ public class NexaEngine
             // 1. Vision Inference (Hands & Face)
             List<TrackedHand> trackedHands = _tracker.ProcessFrame(frame);
             TrackedFace? primaryFace = _faceTracker.ProcessFrame(frame);
-            FrameContext context = new(frame, trackedHands, primaryFace);
+            FrameContext context = new(frame, trackedHands, primaryFace, _gestureArbitrator);
 
             // 2. Domain Processors Update Pass (Decoupled via IFrameProcessor)
             foreach (IFrameProcessor processor in _controllers.Processors)
@@ -305,7 +327,7 @@ public class NexaEngine
                         (List<TrackedHand> trackedHands, TrackedFace? primaryFace) =
                             await _visionPipeline.ProcessAsync(frame, cts.Token).ConfigureAwait(false);
 
-                        FrameContext context = new(frame, trackedHands, primaryFace);
+                        FrameContext context = new(frame, trackedHands, primaryFace, _gestureArbitrator);
 
                         // 2. Domain Processors Update Pass
                         foreach (IFrameProcessor processor in _controllers.Processors)

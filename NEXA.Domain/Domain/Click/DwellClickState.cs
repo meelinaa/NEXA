@@ -66,4 +66,14 @@ public class DwellClickState
     /// Indicates whether the clicker is currently in a 500ms post-click cooldown refractory period.
     /// </summary>
     public bool InCooldown => (DateTime.Now - LastClickTime).TotalMilliseconds < 500;
+
+    /// <summary>
+    /// Resets hover timers and progress state.
+    /// </summary>
+    public void Reset()
+    {
+        IsHovering = false;
+        HoverProgress = 0.0;
+        DwellTimer.Reset();
+    }
 }
