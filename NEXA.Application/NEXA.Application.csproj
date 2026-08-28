@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -9,16 +8,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
-    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+    <PackageReference Include="Serilog" Version="4.3.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NEXA.Domain\NEXA.Domain.csproj" />
-    <ProjectReference Include="..\NEXA.Application\NEXA.Application.csproj" />
-    <ProjectReference Include="..\NEXA.Infrastructure\NEXA.Infrastructure.csproj" />
-    <ProjectReference Include="..\NEXA\NEXA.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NEXA.Infrastructure" />
+    <InternalsVisibleTo Include="NEXA" />
+    <InternalsVisibleTo Include="NEXA.Tests" />
+    <InternalsVisibleTo Include="NEXA.Benchmarks" />
   </ItemGroup>
 
 </Project>

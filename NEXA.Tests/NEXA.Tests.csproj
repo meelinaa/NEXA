@@ -17,6 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NEXA.Domain\NEXA.Domain.csproj" />
+    <ProjectReference Include="..\NEXA.Application\NEXA.Application.csproj" />
+    <ProjectReference Include="..\NEXA.Infrastructure\NEXA.Infrastructure.csproj" />
     <ProjectReference Include="..\NEXA\NEXA.csproj" />
   </ItemGroup>
 

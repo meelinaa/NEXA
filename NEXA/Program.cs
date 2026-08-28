@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using Microsoft.Extensions.DependencyInjection;
-using NEXA.Application;
-using NEXA.DependencyInjection;
+using global::NEXA.Application;
+using global::NEXA.DependencyInjection;
 using Serilog;
 
 // ====================================================================================================

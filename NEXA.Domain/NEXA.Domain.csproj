@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NEXA.Application" />
+    <InternalsVisibleTo Include="NEXA.Infrastructure" />
+    <InternalsVisibleTo Include="NEXA" />
+    <InternalsVisibleTo Include="NEXA.Tests" />
+    <InternalsVisibleTo Include="NEXA.Benchmarks" />
+  </ItemGroup>
+
+</Project>

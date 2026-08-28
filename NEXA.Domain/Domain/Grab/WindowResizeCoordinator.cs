@@ -1,6 +1,5 @@
 using System;
 using NEXA.Abstractions;
-using NEXA.Adapters.Output;
 using NEXA.Hand;
 using OpenCvSharp;
 
@@ -37,10 +36,17 @@ public class WindowResizeCoordinator
         IInputSink? inputSink = null,
         WindowResizeDetector? resizeDetector = null)
     {
-        IInputSink sink = inputSink ?? new Win32InputSink();
-        (int width, int height) = sink.GetScreenResolution();
-        _screenWidth = width > 0 ? width : 1920;
-        _screenHeight = height > 0 ? height : 1080;
+        if (inputSink != null)
+        {
+            (int width, int height) = inputSink.GetScreenResolution();
+            _screenWidth = width > 0 ? width : 1920;
+            _screenHeight = height > 0 ? height : 1080;
+        }
+        else
+        {
+            _screenWidth = 1920;
+            _screenHeight = 1080;
+        }
         _resizeDetector = resizeDetector ?? new WindowResizeDetector();
     }
 
